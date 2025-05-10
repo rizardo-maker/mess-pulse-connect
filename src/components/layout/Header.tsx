@@ -1,18 +1,32 @@
 
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const isMobile = useIsMobile();
+  const { user, userRole, signOut } = useAuth();
+  const navigate = useNavigate();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
+  };
+
+  const handleLoginClick = () => {
+    navigate('/login');
+    if (isMenuOpen) setIsMenuOpen(false);
+  };
+
+  const handleLogoutClick = async () => {
+    await signOut();
+    navigate('/');
+    if (isMenuOpen) setIsMenuOpen(false);
   };
 
   return (
@@ -35,10 +49,24 @@ const Header = () => {
               </h2>
             </div>
           </div>
-          <div className="mt-2 md:mt-0">
-            <Button variant="outline" className="bg-white text-rgukt-blue hover:bg-gray-100">
-              <Link to="/login">Login</Link>
-            </Button>
+          <div className="mt-2 md:mt-0 flex items-center gap-3">
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="hidden md:block text-right">
+                  <span className="text-sm block">{user.email}</span>
+                  <span className="text-xs bg-rgukt-gold px-2 py-0.5 rounded-full">
+                    {userRole === 'admin' ? 'Admin' : 'Visitor'}
+                  </span>
+                </div>
+                <Button variant="outline" className="bg-white text-rgukt-blue hover:bg-gray-100" onClick={handleLogoutClick}>
+                  <LogOut className="h-4 w-4 mr-2" /> Logout
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" className="bg-white text-rgukt-blue hover:bg-gray-100" onClick={handleLoginClick}>
+                <User className="h-4 w-4 mr-2" /> Login
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -120,6 +148,11 @@ const Header = () => {
                 <Link to="/polls" className="text-rgukt-blue font-medium hover:text-rgukt-lightblue">
                   Polls & Feedback
                 </Link>
+                {userRole === 'admin' && (
+                  <Link to="/admin" className="text-rgukt-gold font-medium hover:text-rgukt-lightblue">
+                    Admin Dashboard
+                  </Link>
+                )}
               </div>
             )}
           </div>
