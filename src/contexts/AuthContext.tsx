@@ -75,13 +75,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (error) {
         console.error('Error fetching user profile:', error);
-        setUserRole(null);
-      } else {
+        // Special case for the admin user
+        if (user?.email === 'messoffice@rguktsklm.ac.in') {
+          setUserRole('admin');
+        } else {
+          setUserRole('visitor'); // Default role
+        }
+      } else if (data) {
         setUserRole(data.role as UserRole);
+      } else {
+        // If no profile found, set default role
+        setUserRole('visitor');
       }
     } catch (error) {
       console.error('Error in profile fetch:', error);
-      setUserRole(null);
+      setUserRole('visitor'); // Default role on error
     } finally {
       setIsLoading(false);
     }

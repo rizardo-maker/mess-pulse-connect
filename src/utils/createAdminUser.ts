@@ -6,21 +6,16 @@ export async function createAdminUser() {
   const adminPassword = 'messoffice';
   
   try {
-    // Check if admin user already exists
-    const { data: existingUsers, error: lookupError } = await supabase.auth.admin.listUsers();
-    
-    if (lookupError) {
-      console.error("Error checking for admin user:", lookupError);
-      return { success: false, error: lookupError };
-    }
-    
-    // Fixed: Properly check the users array and use type assertion if needed
-    const adminExists = existingUsers?.users && existingUsers.users.some(
-      (user: any) => user.email === adminEmail
-    );
-    
-    if (!adminExists) {
-      // Create admin user if doesn't exist
+    // Check if admin user already exists by trying to sign in
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: adminEmail,
+      password: adminPassword,
+    });
+
+    if (signInError) {
+      console.log("Admin user doesn't exist yet. Creating...");
+      
+      // Create admin user
       const { data, error } = await supabase.auth.signUp({
         email: adminEmail,
         password: adminPassword,
@@ -32,9 +27,19 @@ export async function createAdminUser() {
       }
       
       console.log("Admin user created successfully:", data);
+      
+      // Sign out after creating the admin
+      await supabase.auth.signOut();
+      
       return { success: true, data };
     } else {
       console.log("Admin user already exists");
+      
+      // Sign out after checking
+      if (signInData) {
+        await supabase.auth.signOut();
+      }
+      
       return { success: true, message: "Admin user already exists" };
     }
   } catch (error) {
