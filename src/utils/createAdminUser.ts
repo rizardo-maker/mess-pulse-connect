@@ -14,7 +14,10 @@ export async function createAdminUser() {
       return { success: false, error: lookupError };
     }
     
-    const adminExists = existingUsers?.users.some(user => user.email === adminEmail);
+    // Fixed: Properly check the users array and use type assertion if needed
+    const adminExists = existingUsers?.users && existingUsers.users.some(
+      (user: any) => user.email === adminEmail
+    );
     
     if (!adminExists) {
       // Create admin user if doesn't exist
