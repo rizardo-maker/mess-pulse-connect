@@ -11,6 +11,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Complaints from "./pages/Complaints";
 import Polls from "./pages/Polls";
+import PollDetail from "./pages/PollDetail"; // New component for individual polls
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ComplaintsAdmin from "./pages/admin/ComplaintsAdmin";
@@ -45,6 +46,13 @@ const AppContent = () => {
         <Route path="/polls" element={
           <ProtectedRoute>
             <Polls />
+          </ProtectedRoute>
+        } />
+        
+        {/* New route for individual polls */}
+        <Route path="/polls/:pollId" element={
+          <ProtectedRoute>
+            <PollDetail />
           </ProtectedRoute>
         } />
         

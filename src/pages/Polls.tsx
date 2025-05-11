@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -11,30 +10,16 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, UserRound, CheckCircle, CircleAlert } from 'lucide-react';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658'];
+import { Loader2, UserRound, CheckCircle, CircleAlert, ArrowRight } from 'lucide-react';
 
 const Polls = () => {
   const { user } = useAuth();
-  // Active poll state
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false);
   const [activePolls, setActivePolls] = useState<any[]>([]);
   const [pastPolls, setPastPolls] = useState<any[]>([]);
-  const [currentActivePoll, setCurrentActivePoll] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingResults, setLoadingResults] = useState(false);
-  const [pollResults, setPollResults] = useState<any>({});
   const [totalStudents, setTotalStudents] = useState(0);
   const [participationRate, setParticipationRate] = useState(0);
+  const [totalVotes, setTotalVotes] = useState(0);
 
   useEffect(() => {
     fetchPolls();
@@ -57,10 +42,8 @@ const Polls = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'poll_responses' },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-            fetchPollResults(currentActivePoll?.id);
-          }
+        () => {
+          fetchPollVotes();
         }
       )
       .subscribe();
@@ -69,7 +52,7 @@ const Polls = () => {
       supabase.removeChannel(pollsChannel);
       supabase.removeChannel(responsesChannel);
     };
-  }, [currentActivePoll]);
+  }, []);
   
   const fetchTotalStudents = async () => {
     try {
@@ -83,6 +66,23 @@ const Polls = () => {
       setTotalStudents(count || 0);
     } catch (error) {
       console.error('Error fetching student count:', error);
+    }
+  };
+  
+  const fetchPollVotes = async () => {
+    try {
+      const { count } = await supabase
+        .from('poll_responses')
+        .select('*', { count: 'exact', head: true });
+      
+      setTotalVotes(count || 0);
+      
+      if (totalStudents > 0) {
+        // Calculate average participation rate across all polls
+        setParticipationRate((count || 0) / totalStudents * 100);
+      }
+    } catch (error) {
+      console.error('Error fetching poll votes:', error);
     }
   };
   
@@ -109,159 +109,43 @@ const Polls = () => {
         
       if (pastError) throw pastError;
       
-      setActivePolls(active || []);
-      setPastPolls(past || []);
+      // For each poll, fetch the vote count
+      const activeWithCounts = await Promise.all(
+        (active || []).map(async (poll) => {
+          const { count } = await supabase
+            .from('poll_responses')
+            .select('*', { count: 'exact', head: true })
+            .eq('poll_id', poll.id);
+          
+          return {
+            ...poll,
+            voteCount: count || 0
+          };
+        })
+      );
       
-      // Set current active poll to first one if available
-      if (active && active.length > 0) {
-        setCurrentActivePoll(active[0]);
-        checkUserVote(active[0].id);
-        fetchPollResults(active[0].id);
-      } else {
-        setCurrentActivePoll(null);
-      }
+      const pastWithCounts = await Promise.all(
+        (past || []).map(async (poll) => {
+          const { count } = await supabase
+            .from('poll_responses')
+            .select('*', { count: 'exact', head: true })
+            .eq('poll_id', poll.id);
+          
+          return {
+            ...poll,
+            voteCount: count || 0
+          };
+        })
+      );
+      
+      setActivePolls(activeWithCounts);
+      setPastPolls(pastWithCounts);
+      fetchPollVotes();
     } catch (error) {
       console.error("Error fetching polls:", error);
       toast.error("Failed to load polls");
     } finally {
       setLoading(false);
-    }
-  };
-  
-  const checkUserVote = async (pollId: string) => {
-    if (!user) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('poll_responses')
-        .select('selected_option')
-        .eq('poll_id', pollId)
-        .eq('user_id', user.id)
-        .single();
-        
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-      
-      if (data) {
-        setHasVoted(true);
-        setSelectedOption(data.selected_option);
-      } else {
-        setHasVoted(false);
-        setSelectedOption(null);
-      }
-    } catch (error) {
-      console.error("Error checking user vote:", error);
-    }
-  };
-  
-  const fetchPollResults = async (pollId: string) => {
-    if (!pollId) return;
-    
-    setLoadingResults(true);
-    
-    try {
-      // Get the poll details first to get the options
-      const { data: poll, error: pollError } = await supabase
-        .from('polls')
-        .select('*')
-        .eq('id', pollId)
-        .single();
-        
-      if (pollError) throw pollError;
-      
-      // Get responses for this poll
-      const { data: responses, error: responsesError, count } = await supabase
-        .from('poll_responses')
-        .select('*', { count: 'exact' })
-        .eq('poll_id', pollId);
-        
-      if (responsesError) throw responsesError;
-      
-      // Calculate results for each option
-      const results: Record<string, number> = {};
-      const optionCounts: Record<string, number> = {};
-      
-      // Initialize counts to 0
-      if (poll.options) {
-        poll.options.forEach((option: string) => {
-          optionCounts[option] = 0;
-        });
-      }
-      
-      // Count responses
-      if (responses) {
-        responses.forEach((response) => {
-          const option = response.selected_option;
-          optionCounts[option] = (optionCounts[option] || 0) + 1;
-        });
-      }
-      
-      // Calculate percentages
-      const totalVotes = count || 0;
-      if (totalVotes > 0) {
-        Object.keys(optionCounts).forEach(option => {
-          results[option] = (optionCounts[option] / totalVotes) * 100;
-        });
-      }
-      
-      setPollResults({
-        pollId,
-        totalVotes,
-        optionCounts,
-        percentages: results,
-        chartData: Object.keys(optionCounts).map(option => ({
-          name: option,
-          value: optionCounts[option]
-        }))
-      });
-      
-      // Calculate participation rate
-      if (totalStudents > 0) {
-        setParticipationRate((totalVotes / totalStudents) * 100);
-      }
-      
-    } catch (error) {
-      console.error("Error fetching poll results:", error);
-      toast.error("Failed to load poll results");
-    } finally {
-      setLoadingResults(false);
-    }
-  };
-
-  const handleSubmitVote = async () => {
-    if (!selectedOption || !currentActivePoll || !user) {
-      toast.error("Please select an option before voting");
-      return;
-    }
-    
-    setIsSubmitting(true);
-    
-    try {
-      const { error } = await supabase
-        .from('poll_responses')
-        .insert({
-          poll_id: currentActivePoll.id,
-          user_id: user.id,
-          selected_option: selectedOption
-        });
-        
-      if (error) throw error;
-      
-      toast.success("Your vote has been recorded successfully!");
-      setHasVoted(true);
-      fetchPollResults(currentActivePoll.id);
-    } catch (error: any) {
-      console.error("Error submitting vote:", error);
-      
-      if (error.code === '23505') {
-        toast.error("You have already voted in this poll");
-        checkUserVote(currentActivePoll.id);
-      } else {
-        toast.error("Failed to submit vote. Please try again.");
-      }
-    } finally {
-      setIsSubmitting(false);
     }
   };
   
@@ -336,177 +220,45 @@ const Polls = () => {
               <div className="flex justify-center py-12">
                 <Loader2 className="h-10 w-10 animate-spin text-rgukt-blue" />
               </div>
-            ) : currentActivePoll ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-rgukt-blue">{currentActivePoll.title}</CardTitle>
-                      <CardDescription>
-                        {currentActivePoll.description}
+            ) : activePolls.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {activePolls.map(poll => (
+                  <Card key={poll.id} className="overflow-hidden hover:shadow-lg transition-all">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-rgukt-blue text-xl">{poll.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {poll.description}
                       </CardDescription>
-                      <p className="text-sm text-gray-500">
-                        Poll ends on: {formatDate(currentActivePoll.end_date)}
-                      </p>
                     </CardHeader>
                     
-                    <CardContent>
-                      {!hasVoted ? (
-                        <RadioGroup 
-                          value={selectedOption || undefined} 
-                          onValueChange={setSelectedOption}
-                          className="space-y-4"
-                        >
-                          {currentActivePoll.options.map((option: string, index: number) => (
-                            <div key={index} className="flex items-center space-x-2">
-                              <RadioGroupItem value={option} id={`option-${index}`} />
-                              <Label htmlFor={`option-${index}`} className="cursor-pointer">
-                                {option}
-                              </Label>
-                            </div>
-                          ))}
-                        </RadioGroup>
-                      ) : loadingResults ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2 className="h-8 w-8 animate-spin text-rgukt-blue" />
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <p className="font-medium text-green-600">Thank you for voting!</p>
-                          <div className="space-y-3">
-                            {currentActivePoll.options.map((option: string, index: number) => (
-                              <div key={index} className="space-y-1">
-                                <div className="flex justify-between text-sm">
-                                  <span>{option}</span>
-                                  <span>
-                                    {pollResults.percentages && pollResults.percentages[option] 
-                                      ? pollResults.percentages[option].toFixed(1) 
-                                      : 0}%
-                                  </span>
-                                </div>
-                                <Progress 
-                                  value={pollResults.percentages && pollResults.percentages[option] 
-                                    ? pollResults.percentages[option]
-                                    : 0} 
-                                  className="h-2" 
-                                />
-                              </div>
-                            ))}
-                          </div>
-                          
-                          <div className="pt-6 pb-2">
-                            <ChartContainer className="h-60" config={{}}>
-                              <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                  <ChartTooltip 
-                                    content={({ active, payload }) => {
-                                      if (active && payload && payload.length) {
-                                        return (
-                                          <ChartTooltipContent>
-                                            <div className="space-y-1">
-                                              <p className="font-medium">{payload[0].name}</p>
-                                              <p className="text-sm text-muted-foreground">
-                                                Votes: {payload[0].value}
-                                              </p>
-                                            </div>
-                                          </ChartTooltipContent>
-                                        );
-                                      }
-                                      return null;
-                                    }}
-                                  />
-                                  <Pie
-                                    data={pollResults.chartData || []}
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={false}
-                                    outerRadius={80}
-                                    fill="#8884d8"
-                                    dataKey="value"
-                                    nameKey="name"
-                                    label={({ name, percent }) => 
-                                      `${name}: ${(percent * 100).toFixed(0)}%`
-                                    }
-                                  >
-                                    {(pollResults.chartData || []).map((entry: any, index: number) => (
-                                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                  </Pie>
-                                </PieChart>
-                              </ResponsiveContainer>
-                            </ChartContainer>
-                          </div>
-                          
-                          <p className="text-sm text-gray-500 mt-4">
-                            Total votes: {pollResults.totalVotes || 0}
-                          </p>
-                        </div>
-                      )}
-                    </CardContent>
-                    
-                    {!hasVoted && (
-                      <CardFooter>
-                        <Button 
-                          onClick={handleSubmitVote} 
-                          disabled={isSubmitting || !selectedOption || !user}
-                          className="w-full bg-rgukt-blue hover:bg-rgukt-lightblue"
-                        >
-                          {isSubmitting ? "Submitting..." : "Submit Vote"}
-                        </Button>
-                        {!user && (
-                          <p className="text-sm text-red-500 mt-2">
-                            You must be logged in to vote
-                          </p>
-                        )}
-                      </CardFooter>
-                    )}
-                  </Card>
-                </div>
-                
-                <div>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-rgukt-blue">About Polls</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-gray-600">
-                        Your feedback helps us improve the mess services. Polls are conducted regularly to gather student preferences.
-                      </p>
-                      
-                      <div className="bg-blue-50 p-4 rounded-md">
-                        <p className="text-sm text-rgukt-blue">
-                          Each student can vote only once per poll. Results are published after the polling period ends.
-                        </p>
+                    <CardContent className="pb-3">
+                      <div className="flex justify-between items-center text-sm text-gray-500 mb-2">
+                        <span>Ends: {formatDate(poll.end_date)}</span>
+                        <span>{poll.voteCount} votes</span>
                       </div>
                       
-                      <Separator />
-                      
-                      {activePolls.length > 1 && (
-                        <div>
-                          <h3 className="font-medium mb-2">Other Active Polls</h3>
-                          <div className="space-y-2">
-                            {activePolls.slice(0, 3).map((poll, index) => (
-                              poll.id !== currentActivePoll.id && (
-                                <Button
-                                  key={poll.id}
-                                  variant="outline"
-                                  className="w-full justify-start text-left"
-                                  onClick={() => {
-                                    setCurrentActivePoll(poll);
-                                    checkUserVote(poll.id);
-                                    fetchPollResults(poll.id);
-                                  }}
-                                >
-                                  <span className="truncate">{poll.title}</span>
-                                </Button>
-                              )
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div 
+                          className="bg-rgukt-blue h-1.5 rounded-full" 
+                          style={{ 
+                            width: `${Math.min((poll.voteCount / totalStudents) * 100, 100)}%` 
+                          }}
+                        ></div>
+                      </div>
                     </CardContent>
+                    
+                    <div className="p-4 pt-0 mt-2">
+                      <Link to={`/polls/${poll.id}`}>
+                        <Button 
+                          className="w-full flex items-center justify-center gap-2 bg-rgukt-blue hover:bg-rgukt-lightblue"
+                        >
+                          <span>Participate</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
                   </Card>
-                </div>
+                ))}
               </div>
             ) : (
               <Card>
@@ -526,58 +278,33 @@ const Polls = () => {
                 <Loader2 className="h-10 w-10 animate-spin text-rgukt-blue" />
               </div>
             ) : pastPolls.length > 0 ? (
-              <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {pastPolls.map(poll => (
-                  <Card key={poll.id}>
-                    <CardHeader>
-                      <CardTitle className="text-rgukt-blue">{poll.title}</CardTitle>
-                      <CardDescription>
+                  <Card key={poll.id} className="overflow-hidden hover:shadow transition-all">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-rgukt-blue text-xl">{poll.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">
                         {poll.description}
                       </CardDescription>
-                      <p className="text-sm text-gray-500">
-                        Poll ended on: {formatDate(poll.end_date)}
-                      </p>
                     </CardHeader>
                     
-                    <CardContent>
-                      <Button
-                        variant="outline" 
-                        onClick={() => fetchPollResults(poll.id)}
-                        className="mb-4"
-                      >
-                        {loadingResults && pollResults.pollId === poll.id ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
-                        View Results
-                      </Button>
-                      
-                      {pollResults.pollId === poll.id && (
-                        <div className="space-y-4">
-                          <div className="space-y-3">
-                            {poll.options.map((option: string, index: number) => (
-                              <div key={index} className="space-y-1">
-                                <div className="flex justify-between text-sm">
-                                  <span>{option}</span>
-                                  <span>
-                                    {pollResults.percentages[option] 
-                                      ? pollResults.percentages[option].toFixed(1) 
-                                      : 0}%
-                                  </span>
-                                </div>
-                                <Progress 
-                                  value={pollResults.percentages[option] || 0} 
-                                  className="h-2" 
-                                />
-                              </div>
-                            ))}
-                          </div>
-                          
-                          <p className="text-sm text-gray-500 mt-2">
-                            Total votes: {pollResults.totalVotes || 0}
-                          </p>
-                        </div>
-                      )}
+                    <CardContent className="pb-3">
+                      <div className="flex justify-between items-center text-sm text-gray-500 mb-2">
+                        <span>Ended: {formatDate(poll.end_date)}</span>
+                        <span>{poll.voteCount} votes</span>
+                      </div>
                     </CardContent>
+                    
+                    <div className="p-4 pt-0 mt-2">
+                      <Link to={`/polls/${poll.id}`}>
+                        <Button 
+                          className="w-full flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-700"
+                        >
+                          <span>View Results</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
                   </Card>
                 ))}
               </div>

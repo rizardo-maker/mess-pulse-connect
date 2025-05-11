@@ -6,7 +6,16 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://yleuwsgutjgncmpbndaw.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsZXV3c2d1dGpnbmNtcGJuZGF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY4NjI0MDksImV4cCI6MjA2MjQzODQwOX0.4rSTAfCeLA6vMzhKtZnjV89dPVRGG2-gtrSFKQhaFBA";
 
-// Import the supabase client like this:
-// import { supabase } from "@/integrations/supabase/client";
+// Use globalThis to ensure we're using the same instance across imports
+// @ts-ignore
+const globalWithSupabase = globalThis as typeof globalThis & {
+  supabase: ReturnType<typeof createClient<Database>>
+};
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Create the client if it doesn't exist in the global scope
+export const supabase = globalWithSupabase.supabase || createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Store the client in the global scope to avoid multiple instances
+if (typeof window !== 'undefined') {
+  globalWithSupabase.supabase = supabase;
+}
