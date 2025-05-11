@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -9,82 +9,321 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2, UserRound, CheckCircle, CircleAlert } from 'lucide-react';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658'];
 
 const Polls = () => {
+  const { user } = useAuth();
   // Active poll state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
+  const [activePolls, setActivePolls] = useState<any[]>([]);
+  const [pastPolls, setPastPolls] = useState<any[]>([]);
+  const [currentActivePoll, setCurrentActivePoll] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [pollResults, setPollResults] = useState<any>({});
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [participationRate, setParticipationRate] = useState(0);
 
-  // Sample active poll data
-  const activePoll = {
-    id: "poll-1",
-    title: "Preferred Breakfast Option",
-    description: "Help us determine which breakfast option to serve more frequently",
-    options: [
-      { id: "option-1", text: "Idli & Sambar" },
-      { id: "option-2", text: "Dosa & Chutney" },
-      { id: "option-3", text: "Puri & Curry" },
-      { id: "option-4", text: "Upma & Chutney" },
-    ],
-    endDate: "2025-05-15"
+  useEffect(() => {
+    fetchPolls();
+    fetchTotalStudents();
+    
+    // Set up real-time subscription for polls and responses
+    const pollsChannel = supabase
+      .channel('public-polls-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'polls' },
+        () => {
+          fetchPolls();
+        }
+      )
+      .subscribe();
+      
+    const responsesChannel = supabase
+      .channel('public-responses-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'poll_responses' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+            fetchPollResults(currentActivePoll?.id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pollsChannel);
+      supabase.removeChannel(responsesChannel);
+    };
+  }, [currentActivePoll]);
+  
+  const fetchTotalStudents = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'visitor');
+        
+      if (error) throw error;
+      
+      setTotalStudents(count || 0);
+    } catch (error) {
+      console.error('Error fetching student count:', error);
+    }
+  };
+  
+  const fetchPolls = async () => {
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Fetch active polls where end_date is greater than or equal to today
+      const { data: active, error: activeError } = await supabase
+        .from('polls')
+        .select('*')
+        .gte('end_date', today)
+        .order('created_at', { ascending: false });
+        
+      if (activeError) throw activeError;
+      
+      // Fetch past polls where end_date is less than today
+      const { data: past, error: pastError } = await supabase
+        .from('polls')
+        .select('*')
+        .lt('end_date', today)
+        .order('end_date', { ascending: false });
+        
+      if (pastError) throw pastError;
+      
+      setActivePolls(active || []);
+      setPastPolls(past || []);
+      
+      // Set current active poll to first one if available
+      if (active && active.length > 0) {
+        setCurrentActivePoll(active[0]);
+        checkUserVote(active[0].id);
+        fetchPollResults(active[0].id);
+      } else {
+        setCurrentActivePoll(null);
+      }
+    } catch (error) {
+      console.error("Error fetching polls:", error);
+      toast.error("Failed to load polls");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const checkUserVote = async (pollId: string) => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('poll_responses')
+        .select('selected_option')
+        .eq('poll_id', pollId)
+        .eq('user_id', user.id)
+        .single();
+        
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      
+      if (data) {
+        setHasVoted(true);
+        setSelectedOption(data.selected_option);
+      } else {
+        setHasVoted(false);
+        setSelectedOption(null);
+      }
+    } catch (error) {
+      console.error("Error checking user vote:", error);
+    }
+  };
+  
+  const fetchPollResults = async (pollId: string) => {
+    if (!pollId) return;
+    
+    setLoadingResults(true);
+    
+    try {
+      // Get the poll details first to get the options
+      const { data: poll, error: pollError } = await supabase
+        .from('polls')
+        .select('*')
+        .eq('id', pollId)
+        .single();
+        
+      if (pollError) throw pollError;
+      
+      // Get responses for this poll
+      const { data: responses, error: responsesError, count } = await supabase
+        .from('poll_responses')
+        .select('*', { count: 'exact' })
+        .eq('poll_id', pollId);
+        
+      if (responsesError) throw responsesError;
+      
+      // Calculate results for each option
+      const results: Record<string, number> = {};
+      const optionCounts: Record<string, number> = {};
+      
+      // Initialize counts to 0
+      if (poll.options) {
+        poll.options.forEach((option: string) => {
+          optionCounts[option] = 0;
+        });
+      }
+      
+      // Count responses
+      if (responses) {
+        responses.forEach((response) => {
+          const option = response.selected_option;
+          optionCounts[option] = (optionCounts[option] || 0) + 1;
+        });
+      }
+      
+      // Calculate percentages
+      const totalVotes = count || 0;
+      if (totalVotes > 0) {
+        Object.keys(optionCounts).forEach(option => {
+          results[option] = (optionCounts[option] / totalVotes) * 100;
+        });
+      }
+      
+      setPollResults({
+        pollId,
+        totalVotes,
+        optionCounts,
+        percentages: results,
+        chartData: Object.keys(optionCounts).map(option => ({
+          name: option,
+          value: optionCounts[option]
+        }))
+      });
+      
+      // Calculate participation rate
+      if (totalStudents > 0) {
+        setParticipationRate((totalVotes / totalStudents) * 100);
+      }
+      
+    } catch (error) {
+      console.error("Error fetching poll results:", error);
+      toast.error("Failed to load poll results");
+    } finally {
+      setLoadingResults(false);
+    }
   };
 
-  // Sample past polls with results
-  const pastPolls = [
-    {
-      id: "past-poll-1",
-      title: "Mess Timing Preference",
-      description: "Results from the poll on preferred mess timings",
-      endDate: "2025-05-01",
-      results: [
-        { option: "Current timings are fine", percentage: 45 },
-        { option: "Extend dinner time by 30 mins", percentage: 30 },
-        { option: "Start breakfast 30 mins earlier", percentage: 25 },
-      ],
-      totalVotes: 320
-    },
-    {
-      id: "past-poll-2",
-      title: "Preferred Dinner Option",
-      description: "Results from the poll on preferred dinner meals",
-      endDate: "2025-04-20",
-      results: [
-        { option: "Rice & Curry", percentage: 20 },
-        { option: "Roti & Curry", percentage: 35 },
-        { option: "Mixed option (rice & roti both)", percentage: 45 },
-      ],
-      totalVotes: 280
-    }
-  ];
-
   const handleSubmitVote = async () => {
-    if (!selectedOption) {
+    if (!selectedOption || !currentActivePoll || !user) {
       toast.error("Please select an option before voting");
       return;
     }
     
     setIsSubmitting(true);
     
-    // Simulate submission (to be replaced with Supabase integration)
     try {
-      // Delay to simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase
+        .from('poll_responses')
+        .insert({
+          poll_id: currentActivePoll.id,
+          user_id: user.id,
+          selected_option: selectedOption
+        });
+        
+      if (error) throw error;
       
       toast.success("Your vote has been recorded successfully!");
       setHasVoted(true);
-    } catch (error) {
-      toast.error("Something went wrong. Please try again.");
-      console.error(error);
+      fetchPollResults(currentActivePoll.id);
+    } catch (error: any) {
+      console.error("Error submitting vote:", error);
+      
+      if (error.code === '23505') {
+        toast.error("You have already voted in this poll");
+        checkUserVote(currentActivePoll.id);
+      } else {
+        toast.error("Failed to submit vote. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
+  };
+  
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric'
+    });
   };
 
   return (
     <Layout>
       <div className="container py-8">
         <h1 className="text-3xl font-bold text-rgukt-blue mb-8">Polls & Feedback</h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <Card className="bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-600">Total Students</h3>
+                  <p className="text-3xl font-bold text-rgukt-blue">{totalStudents}</p>
+                </div>
+                <div className="bg-blue-100 p-3 rounded-full">
+                  <UserRound className="h-6 w-6 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-green-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-600">Active Polls</h3>
+                  <p className="text-3xl font-bold text-green-600">{activePolls.length}</p>
+                </div>
+                <div className="bg-green-100 p-3 rounded-full">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-amber-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-600">Participation Rate</h3>
+                  <p className="text-3xl font-bold text-amber-600">
+                    {participationRate.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="bg-amber-100 p-3 rounded-full">
+                  <CircleAlert className="h-6 w-6 text-amber-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
         
         <Tabs defaultValue="active" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-8">
@@ -93,17 +332,21 @@ const Polls = () => {
           </TabsList>
           
           <TabsContent value="active">
-            {activePoll ? (
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-rgukt-blue" />
+              </div>
+            ) : currentActivePoll ? (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-rgukt-blue">{activePoll.title}</CardTitle>
+                      <CardTitle className="text-rgukt-blue">{currentActivePoll.title}</CardTitle>
                       <CardDescription>
-                        {activePoll.description}
+                        {currentActivePoll.description}
                       </CardDescription>
                       <p className="text-sm text-gray-500">
-                        Poll ends on: {activePoll.endDate}
+                        Poll ends on: {formatDate(currentActivePoll.end_date)}
                       </p>
                     </CardHeader>
                     
@@ -114,31 +357,88 @@ const Polls = () => {
                           onValueChange={setSelectedOption}
                           className="space-y-4"
                         >
-                          {activePoll.options.map(option => (
-                            <div key={option.id} className="flex items-center space-x-2">
-                              <RadioGroupItem value={option.id} id={option.id} />
-                              <Label htmlFor={option.id} className="cursor-pointer">
-                                {option.text}
+                          {currentActivePoll.options.map((option: string, index: number) => (
+                            <div key={index} className="flex items-center space-x-2">
+                              <RadioGroupItem value={option} id={`option-${index}`} />
+                              <Label htmlFor={`option-${index}`} className="cursor-pointer">
+                                {option}
                               </Label>
                             </div>
                           ))}
                         </RadioGroup>
+                      ) : loadingResults ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-8 w-8 animate-spin text-rgukt-blue" />
+                        </div>
                       ) : (
                         <div className="space-y-4">
                           <p className="font-medium text-green-600">Thank you for voting!</p>
                           <div className="space-y-3">
-                            {activePoll.options.map((option, index) => (
-                              <div key={option.id} className="space-y-1">
+                            {currentActivePoll.options.map((option: string, index: number) => (
+                              <div key={index} className="space-y-1">
                                 <div className="flex justify-between text-sm">
-                                  <span>{option.text}</span>
-                                  <span>{[45, 25, 15, 15][index]}%</span>
+                                  <span>{option}</span>
+                                  <span>
+                                    {pollResults.percentages && pollResults.percentages[option] 
+                                      ? pollResults.percentages[option].toFixed(1) 
+                                      : 0}%
+                                  </span>
                                 </div>
-                                <Progress value={[45, 25, 15, 15][index]} className="h-2" />
+                                <Progress 
+                                  value={pollResults.percentages && pollResults.percentages[option] 
+                                    ? pollResults.percentages[option]
+                                    : 0} 
+                                  className="h-2" 
+                                />
                               </div>
                             ))}
                           </div>
+                          
+                          <div className="pt-6 pb-2">
+                            <ChartContainer className="h-60" config={{}}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <ChartTooltip 
+                                    content={({ active, payload }) => {
+                                      if (active && payload && payload.length) {
+                                        return (
+                                          <ChartTooltipContent>
+                                            <div className="space-y-1">
+                                              <p className="font-medium">{payload[0].name}</p>
+                                              <p className="text-sm text-muted-foreground">
+                                                Votes: {payload[0].value}
+                                              </p>
+                                            </div>
+                                          </ChartTooltipContent>
+                                        );
+                                      }
+                                      return null;
+                                    }}
+                                  />
+                                  <Pie
+                                    data={pollResults.chartData || []}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={false}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    dataKey="value"
+                                    nameKey="name"
+                                    label={({ name, percent }) => 
+                                      `${name}: ${(percent * 100).toFixed(0)}%`
+                                    }
+                                  >
+                                    {(pollResults.chartData || []).map((entry: any, index: number) => (
+                                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                  </Pie>
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </ChartContainer>
+                          </div>
+                          
                           <p className="text-sm text-gray-500 mt-4">
-                            Total votes: 120 (Simulated data)
+                            Total votes: {pollResults.totalVotes || 0}
                           </p>
                         </div>
                       )}
@@ -148,11 +448,16 @@ const Polls = () => {
                       <CardFooter>
                         <Button 
                           onClick={handleSubmitVote} 
-                          disabled={isSubmitting || !selectedOption}
+                          disabled={isSubmitting || !selectedOption || !user}
                           className="w-full bg-rgukt-blue hover:bg-rgukt-lightblue"
                         >
                           {isSubmitting ? "Submitting..." : "Submit Vote"}
                         </Button>
+                        {!user && (
+                          <p className="text-sm text-red-500 mt-2">
+                            You must be logged in to vote
+                          </p>
+                        )}
                       </CardFooter>
                     )}
                   </Card>
@@ -176,15 +481,29 @@ const Polls = () => {
                       
                       <Separator />
                       
-                      <div>
-                        <h3 className="font-medium mb-1">Have a suggestion?</h3>
-                        <p className="text-sm text-gray-600 mb-3">
-                          If you have suggestions for future polls or mess improvements, please submit them here.
-                        </p>
-                        <Button variant="outline" className="w-full border-rgukt-blue text-rgukt-blue hover:bg-rgukt-blue hover:text-white">
-                          Submit Suggestion
-                        </Button>
-                      </div>
+                      {activePolls.length > 1 && (
+                        <div>
+                          <h3 className="font-medium mb-2">Other Active Polls</h3>
+                          <div className="space-y-2">
+                            {activePolls.slice(0, 3).map((poll, index) => (
+                              poll.id !== currentActivePoll.id && (
+                                <Button
+                                  key={poll.id}
+                                  variant="outline"
+                                  className="w-full justify-start text-left"
+                                  onClick={() => {
+                                    setCurrentActivePoll(poll);
+                                    checkUserVote(poll.id);
+                                    fetchPollResults(poll.id);
+                                  }}
+                                >
+                                  <span className="truncate">{poll.title}</span>
+                                </Button>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -202,41 +521,76 @@ const Polls = () => {
           </TabsContent>
           
           <TabsContent value="past">
-            <div className="space-y-8">
-              {pastPolls.map(poll => (
-                <Card key={poll.id}>
-                  <CardHeader>
-                    <CardTitle className="text-rgukt-blue">{poll.title}</CardTitle>
-                    <CardDescription>
-                      {poll.description}
-                    </CardDescription>
-                    <p className="text-sm text-gray-500">
-                      Poll ended on: {poll.endDate}
-                    </p>
-                  </CardHeader>
-                  
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="space-y-3">
-                        {poll.results.map((result, index) => (
-                          <div key={index} className="space-y-1">
-                            <div className="flex justify-between text-sm">
-                              <span>{result.option}</span>
-                              <span>{result.percentage}%</span>
-                            </div>
-                            <Progress value={result.percentage} className="h-2" />
-                          </div>
-                        ))}
-                      </div>
-                      
-                      <p className="text-sm text-gray-500 mt-2">
-                        Total votes: {poll.totalVotes}
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-rgukt-blue" />
+              </div>
+            ) : pastPolls.length > 0 ? (
+              <div className="space-y-8">
+                {pastPolls.map(poll => (
+                  <Card key={poll.id}>
+                    <CardHeader>
+                      <CardTitle className="text-rgukt-blue">{poll.title}</CardTitle>
+                      <CardDescription>
+                        {poll.description}
+                      </CardDescription>
+                      <p className="text-sm text-gray-500">
+                        Poll ended on: {formatDate(poll.end_date)}
                       </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardHeader>
+                    
+                    <CardContent>
+                      <Button
+                        variant="outline" 
+                        onClick={() => fetchPollResults(poll.id)}
+                        className="mb-4"
+                      >
+                        {loadingResults && pollResults.pollId === poll.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        View Results
+                      </Button>
+                      
+                      {pollResults.pollId === poll.id && (
+                        <div className="space-y-4">
+                          <div className="space-y-3">
+                            {poll.options.map((option: string, index: number) => (
+                              <div key={index} className="space-y-1">
+                                <div className="flex justify-between text-sm">
+                                  <span>{option}</span>
+                                  <span>
+                                    {pollResults.percentages[option] 
+                                      ? pollResults.percentages[option].toFixed(1) 
+                                      : 0}%
+                                  </span>
+                                </div>
+                                <Progress 
+                                  value={pollResults.percentages[option] || 0} 
+                                  className="h-2" 
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <p className="text-sm text-gray-500 mt-2">
+                            Total votes: {pollResults.totalVotes || 0}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-rgukt-blue">No Past Polls</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p>There are no past polls in the system yet.</p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>

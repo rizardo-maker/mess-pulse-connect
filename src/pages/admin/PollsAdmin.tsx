@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,27 @@ import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/contexts/AuthContext";
+import { Loader2, Trash2 } from "lucide-react";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const PollsAdmin = () => {
   const { user } = useAuth();
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
+  const [activePolls, setActivePolls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingPollId, setDeletingPollId] = useState<string | null>(null);
+  const [totalStudents, setTotalStudents] = useState(0);
   
   const pollForm = useForm({
     defaultValues: {
@@ -25,6 +41,92 @@ const PollsAdmin = () => {
       endDate: ''
     }
   });
+
+  useEffect(() => {
+    fetchActivePolls();
+    fetchTotalStudents();
+    
+    // Set up real-time subscription for polls
+    const pollsChannel = supabase
+      .channel('polls-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'polls' },
+        () => {
+          fetchActivePolls();
+        }
+      )
+      .subscribe();
+      
+    // Set up real-time subscription for poll responses
+    const responsesChannel = supabase
+      .channel('poll-responses-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'poll_responses' },
+        () => {
+          fetchActivePolls();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pollsChannel);
+      supabase.removeChannel(responsesChannel);
+    };
+  }, []);
+  
+  const fetchTotalStudents = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'visitor');
+        
+      if (error) throw error;
+      
+      setTotalStudents(count || 0);
+    } catch (error) {
+      console.error('Error fetching student count:', error);
+    }
+  };
+  
+  const fetchActivePolls = async () => {
+    setLoading(true);
+    try {
+      // Fetch active polls
+      const { data: polls, error } = await supabase
+        .from('polls')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      
+      // For each poll, fetch the vote count
+      const pollsWithVoteCounts = await Promise.all(
+        polls.map(async (poll) => {
+          const { count, error: countError } = await supabase
+            .from('poll_responses')
+            .select('*', { count: 'exact', head: true })
+            .eq('poll_id', poll.id);
+            
+          if (countError) throw countError;
+          
+          return {
+            ...poll,
+            votes: count || 0
+          };
+        })
+      );
+      
+      setActivePolls(pollsWithVoteCounts);
+    } catch (error) {
+      console.error("Error fetching polls:", error);
+      toast.error("Failed to load polls");
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const addOption = () => {
     setPollOptions([...pollOptions, '']);
@@ -76,6 +178,45 @@ const PollsAdmin = () => {
     }
   };
   
+  const handleDeletePoll = async (pollId: string) => {
+    setDeletingPollId(pollId);
+    
+    try {
+      // First delete all responses to this poll
+      await supabase
+        .from('poll_responses')
+        .delete()
+        .eq('poll_id', pollId);
+        
+      // Then delete the poll itself
+      const { error } = await supabase
+        .from('polls')
+        .delete()
+        .eq('id', pollId);
+        
+      if (error) throw error;
+      
+      toast.success("Poll deleted successfully");
+      // Remove from local state
+      setActivePolls(activePolls.filter(poll => poll.id !== pollId));
+    } catch (error) {
+      console.error("Error deleting poll:", error);
+      toast.error("Failed to delete poll");
+    } finally {
+      setDeletingPollId(null);
+      setConfirmDeleteId(null);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric'
+    });
+  };
+  
   return (
     <Layout>
       <div className="container py-8">
@@ -87,6 +228,30 @@ const PollsAdmin = () => {
               Back to Dashboard
             </Button>
           </Link>
+        </div>
+        
+        {/* Student Stats Card */}
+        <div className="mb-6">
+          <Card className="bg-gradient-to-r from-blue-50 to-blue-100">
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center p-4 bg-white/80 rounded-lg shadow-sm">
+                  <h3 className="text-lg font-medium text-gray-600">Total Students</h3>
+                  <p className="text-3xl font-bold text-rgukt-blue">{totalStudents}</p>
+                </div>
+                <div className="text-center p-4 bg-white/80 rounded-lg shadow-sm">
+                  <h3 className="text-lg font-medium text-gray-600">Active Polls</h3>
+                  <p className="text-3xl font-bold text-rgukt-blue">{activePolls.length}</p>
+                </div>
+                <div className="text-center p-4 bg-white/80 rounded-lg shadow-sm">
+                  <h3 className="text-lg font-medium text-gray-600">Total Votes</h3>
+                  <p className="text-3xl font-bold text-rgukt-blue">
+                    {activePolls.reduce((sum, poll) => sum + poll.votes, 0)}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -178,32 +343,74 @@ const PollsAdmin = () => {
                 <CardTitle className="text-rgukt-blue">Active Polls</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Votes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>Preferred Breakfast Option</TableCell>
-                      <TableCell>2025-05-15</TableCell>
-                      <TableCell>124</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>Dinner Menu Feedback</TableCell>
-                      <TableCell>2025-05-20</TableCell>
-                      <TableCell>87</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
+                {loading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-rgukt-blue" />
+                  </div>
+                ) : activePolls.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Title</TableHead>
+                        <TableHead>End Date</TableHead>
+                        <TableHead>Votes</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activePolls.map(poll => (
+                        <TableRow key={poll.id}>
+                          <TableCell className="font-medium">{poll.title}</TableCell>
+                          <TableCell>{formatDate(poll.end_date)}</TableCell>
+                          <TableCell>{poll.votes}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setConfirmDeleteId(poll.id)}
+                              disabled={deletingPollId === poll.id}
+                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              {deletingPollId === poll.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-center py-4 text-gray-500">No polls created yet</p>
+                )}
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
+      
+      {/* Confirmation Dialog for Deleting Polls */}
+      <AlertDialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will permanently delete the poll and all votes associated with it. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => confirmDeleteId && handleDeletePoll(confirmDeleteId)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 };
