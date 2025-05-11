@@ -10,30 +10,44 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useForm } from "react-hook-form";
+
+interface LoginFormValues {
+  email: string;
+  password: string;
+}
+
+interface RegisterFormValues extends LoginFormValues {
+  confirmPassword: string;
+}
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
+  
+  const loginForm = useForm<LoginFormValues>({
+    defaultValues: { email: '', password: '' }
+  });
+  
+  const registerForm = useForm<RegisterFormValues>({
+    defaultValues: { email: '', password: '', confirmPassword: '' }
+  });
   
   // Redirect if user is already logged in
   useEffect(() => {
     if (user) {
-      navigate('/');
+      if (userRole === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/');
+      }
     }
-  }, [user, navigate]);
+  }, [user, userRole, navigate]);
   
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleLogin = async (formData: LoginFormValues) => {
     // Form validation
-    if (!email.trim() || !password) {
+    if (!formData.email.trim() || !formData.password) {
       toast.error("Please enter both email and password");
       return;
     }
@@ -43,8 +57,8 @@ const Login = () => {
     try {
       // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: formData.email,
+        password: formData.password,
       });
       
       if (error) {
@@ -54,7 +68,7 @@ const Login = () => {
       
       if (data?.user) {
         toast.success("Login successful");
-        navigate('/');
+        // Redirect will happen automatically via the useEffect above
       }
     } catch (error) {
       console.error(error);
@@ -64,32 +78,44 @@ const Login = () => {
     }
   };
   
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleRegister = async (formData: RegisterFormValues) => {
     // Form validation
-    if (!registerEmail.trim() || !registerPassword || !confirmPassword) {
-      toast.error("Please fill in all fields");
+    if (!formData.email.trim()) {
+      toast.error("Please enter your email");
       return;
     }
     
-    if (registerPassword !== confirmPassword) {
+    if (!formData.password) {
+      toast.error("Please create a password");
+      return;
+    }
+    
+    if (formData.password !== formData.confirmPassword) {
       toast.error("Passwords do not match");
       return;
     }
     
-    if (registerPassword.length < 6) {
+    if (formData.password.length < 6) {
       toast.error("Password must be at least 6 characters");
       return;
     }
     
-    setIsRegistering(true);
+    setIsSubmitting(true);
     
     try {
+      // Check if it's the admin email
+      const isAdminEmail = formData.email === 'messoffice@rguktsklm.ac.in';
+      
+      if (isAdminEmail) {
+        toast.error("This email is reserved. Please use a different email.");
+        setIsSubmitting(false);
+        return;
+      }
+      
       // Register with Supabase
       const { data, error } = await supabase.auth.signUp({
-        email: registerEmail,
-        password: registerPassword,
+        email: formData.email,
+        password: formData.password,
       });
       
       if (error) {
@@ -98,57 +124,20 @@ const Login = () => {
       }
       
       if (data?.user) {
-        toast.success("Registration successful. Please check your email to confirm your account.");
-        // Clear registration form
-        setRegisterEmail('');
-        setRegisterPassword('');
-        setConfirmPassword('');
+        toast.success("Account created successfully. You can now log in.");
+        registerForm.reset();
+        loginForm.reset({ email: formData.email, password: '' });
+        
+        // Switch to login tab
+        document.getElementById('login-tab')?.click();
       }
     } catch (error) {
       console.error(error);
       toast.error("Registration failed. Please try again.");
     } finally {
-      setIsRegistering(false);
+      setIsSubmitting(false);
     }
   };
-
-  // Function to initialize admin user
-  const initializeAdminUser = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // Only proceed if user is logged in
-      if (!session) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: 'messoffice@rguktsklm.ac.in',
-          password: 'messoffice',
-        });
-        
-        if (error) {
-          // Admin doesn't exist, create it
-          const { error: signUpError } = await supabase.auth.signUp({
-            email: 'messoffice@rguktsklm.ac.in',
-            password: 'messoffice',
-          });
-          
-          if (signUpError) {
-            console.error("Error creating admin user:", signUpError);
-          } else {
-            console.log("Admin user created successfully");
-          }
-        } else {
-          console.log("Admin user already exists");
-        }
-      }
-    } catch (error) {
-      console.error("Error initializing admin user:", error);
-    }
-  };
-  
-  // Initialize admin user on component mount
-  useEffect(() => {
-    initializeAdminUser();
-  }, []);
   
   return (
     <Layout>
@@ -166,21 +155,19 @@ const Login = () => {
             <CardContent>
               <Tabs defaultValue="login" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-4">
-                  <TabsTrigger value="login">Login</TabsTrigger>
+                  <TabsTrigger value="login" id="login-tab">Login</TabsTrigger>
                   <TabsTrigger value="register">Register</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="login">
-                  <form onSubmit={handleLogin} className="space-y-4">
+                  <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
                       <Input 
                         id="email"
                         type="email"
                         placeholder="Enter your email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
+                        {...loginForm.register("email", { required: true })}
                         autoComplete="email"
                         className="focus:border-rgukt-blue"
                       />
@@ -188,21 +175,12 @@ const Login = () => {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="password">Password</Label>
-                        <Button 
-                          variant="link" 
-                          className="text-xs text-rgukt-blue p-0 h-auto font-normal"
-                          type="button"
-                        >
-                          Forgot password?
-                        </Button>
                       </div>
                       <Input 
                         id="password"
                         type="password"
                         placeholder="Enter your password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
+                        {...loginForm.register("password", { required: true })}
                         autoComplete="current-password"
                         className="focus:border-rgukt-blue"
                       />
@@ -218,16 +196,14 @@ const Login = () => {
                 </TabsContent>
                 
                 <TabsContent value="register">
-                  <form onSubmit={handleRegister} className="space-y-4">
+                  <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="register-email">Email</Label>
                       <Input 
                         id="register-email"
                         type="email"
                         placeholder="Enter your email"
-                        value={registerEmail}
-                        onChange={(e) => setRegisterEmail(e.target.value)}
-                        required
+                        {...registerForm.register("email", { required: true })}
                         className="focus:border-rgukt-blue"
                       />
                     </div>
@@ -237,9 +213,7 @@ const Login = () => {
                         id="register-password"
                         type="password"
                         placeholder="Create a password"
-                        value={registerPassword}
-                        onChange={(e) => setRegisterPassword(e.target.value)}
-                        required
+                        {...registerForm.register("password", { required: true })}
                         className="focus:border-rgukt-blue"
                       />
                     </div>
@@ -249,18 +223,16 @@ const Login = () => {
                         id="confirm-password"
                         type="password"
                         placeholder="Confirm your password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
+                        {...registerForm.register("confirmPassword", { required: true })}
                         className="focus:border-rgukt-blue"
                       />
                     </div>
                     <Button 
                       type="submit"
                       className="w-full bg-rgukt-blue hover:bg-rgukt-lightblue"
-                      disabled={isRegistering}
+                      disabled={isSubmitting}
                     >
-                      {isRegistering ? "Creating Account..." : "Create Account"}
+                      {isSubmitting ? "Creating Account..." : "Create Account"}
                     </Button>
                   </form>
                 </TabsContent>

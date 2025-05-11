@@ -6,37 +6,37 @@ export async function createAdminUser() {
   const adminPassword = 'messoffice';
   
   try {
-    // Check if admin user already exists by trying to sign in
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+    // Check if admin user already exists by trying to sign in without actually logging in
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: adminEmail,
       password: adminPassword,
     });
 
-    if (signInError) {
+    if (error) {
       console.log("Admin user doesn't exist yet. Creating...");
       
       // Create admin user
-      const { data, error } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: adminEmail,
         password: adminPassword,
       });
       
-      if (error) {
-        console.error("Error creating admin user:", error);
-        return { success: false, error };
+      if (signUpError) {
+        console.error("Error creating admin user:", signUpError);
+        return { success: false, error: signUpError };
       }
       
-      console.log("Admin user created successfully:", data);
+      console.log("Admin user created successfully:", signUpData);
       
-      // Sign out after creating the admin
+      // Make sure we immediately sign out to avoid automatic login
       await supabase.auth.signOut();
       
-      return { success: true, data };
+      return { success: true, data: signUpData };
     } else {
       console.log("Admin user already exists");
       
-      // Sign out after checking
-      if (signInData) {
+      // Sign out after checking to avoid automatic login
+      if (data) {
         await supabase.auth.signOut();
       }
       

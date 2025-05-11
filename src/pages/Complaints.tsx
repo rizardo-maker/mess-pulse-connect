@@ -7,13 +7,28 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Send } from 'lucide-react';
+import { useForm } from "react-hook-form";
+
+interface ComplaintFormValues {
+  title: string;
+  description: string;
+}
 
 const Complaints = () => {
+  const { user } = useAuth();
   const [images, setImages] = useState<File[]>([]);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const form = useForm<ComplaintFormValues>({
+    defaultValues: {
+      title: '',
+      description: ''
+    }
+  });
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -34,35 +49,69 @@ const Complaints = () => {
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (formData: ComplaintFormValues) => {
+    if (!user) {
+      toast.error("You must be logged in to submit a complaint");
+      return;
+    }
     
     // Validation
-    if (!title.trim()) {
+    if (!formData.title.trim()) {
       toast.error("Please add a title to your complaint");
       return;
     }
     
-    if (!description.trim()) {
+    if (!formData.description.trim()) {
       toast.error("Please describe your complaint");
       return;
     }
     
     setIsSubmitting(true);
     
-    // Simulate submission for now (will integrate with Supabase later)
     try {
-      // Delay to simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Upload images if any
+      let imageUrls: string[] = [];
+      
+      if (images.length > 0) {
+        for (const image of images) {
+          const fileName = `${user.id}/${Date.now()}-${image.name}`;
+          const { data, error } = await supabase.storage
+            .from('complaints')
+            .upload(fileName, image);
+            
+          if (error) {
+            console.error("Error uploading image:", error);
+            toast.error(`Failed to upload image: ${image.name}`);
+          } else if (data) {
+            const { data: { publicUrl } } = supabase.storage
+              .from('complaints')
+              .getPublicUrl(data.path);
+              
+            imageUrls.push(publicUrl);
+          }
+        }
+      }
+      
+      // Insert complaint into database
+      const { error } = await supabase
+        .from('complaints')
+        .insert({
+          title: formData.title,
+          description: formData.description,
+          user_id: user.id,
+          images: imageUrls.length > 0 ? imageUrls : null,
+          status: 'Pending'
+        });
+        
+      if (error) throw error;
       
       toast.success("Your complaint has been submitted successfully!");
-      setTitle('');
-      setDescription('');
+      form.reset();
       setImages([]);
       setPreviewUrls([]);
     } catch (error) {
+      console.error("Error submitting complaint:", error);
       toast.error("Something went wrong. Please try again.");
-      console.error(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -83,14 +132,13 @@ const Complaints = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="title">Complaint Title</Label>
                     <Input 
                       id="title"
                       placeholder="Enter a brief title for your complaint"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      {...form.register("title", { required: true })}
                     />
                   </div>
                   
@@ -100,8 +148,7 @@ const Complaints = () => {
                       id="description"
                       placeholder="Describe your complaint in detail"
                       className="min-h-[150px]"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
+                      {...form.register("description", { required: true })}
                     />
                   </div>
                   
@@ -143,6 +190,7 @@ const Complaints = () => {
                     className="bg-rgukt-blue hover:bg-rgukt-lightblue w-full"
                     disabled={isSubmitting}
                   >
+                    <Send className="h-4 w-4 mr-2" />
                     {isSubmitting ? "Submitting..." : "Submit Complaint"}
                   </Button>
                 </form>

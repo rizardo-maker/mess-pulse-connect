@@ -12,12 +12,17 @@ import NotFound from "./pages/NotFound";
 import Complaints from "./pages/Complaints";
 import Polls from "./pages/Polls";
 import Login from "./pages/Login";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import ComplaintsAdmin from "./pages/admin/ComplaintsAdmin";
+import PollsAdmin from "./pages/admin/PollsAdmin";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import AdminRoute from "./components/auth/AdminRoute";
 
 const queryClient = new QueryClient();
 
 const AppContent = () => {
   useEffect(() => {
-    // Create admin user on app initialization
+    // Only create admin user on app initialization, without logging in
     createAdminUser().then((result) => {
       console.log("Admin user setup result:", result);
     }).catch(error => {
@@ -29,9 +34,37 @@ const AppContent = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Index />} />
-        <Route path="/complaints" element={<Complaints />} />
-        <Route path="/polls" element={<Polls />} />
         <Route path="/login" element={<Login />} />
+        
+        {/* Protected routes accessible for all authenticated users */}
+        <Route path="/complaints" element={
+          <ProtectedRoute>
+            <Complaints />
+          </ProtectedRoute>
+        } />
+        <Route path="/polls" element={
+          <ProtectedRoute>
+            <Polls />
+          </ProtectedRoute>
+        } />
+        
+        {/* Admin-only routes */}
+        <Route path="/admin" element={
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        } />
+        <Route path="/admin/complaints" element={
+          <AdminRoute>
+            <ComplaintsAdmin />
+          </AdminRoute>
+        } />
+        <Route path="/admin/polls" element={
+          <AdminRoute>
+            <PollsAdmin />
+          </AdminRoute>
+        } />
+        
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
