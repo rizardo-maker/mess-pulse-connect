@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import { supabase } from '@/integrations/supabase/client';
 import { Trash } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Complaint {
   id: string;
@@ -31,10 +32,7 @@ const ComplaintsAdmin = () => {
     try {
       const { data, error } = await supabase
         .from('complaints')
-        .select(`
-          *,
-          profiles:user_id (username, email)
-        `)
+        .select('*, profiles:user_id(username, email)')
         .order('created_at', { ascending: false });
       
       if (error) throw error;

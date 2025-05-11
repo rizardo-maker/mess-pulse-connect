@@ -7,13 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Link } from 'react-router-dom';
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Bell, Send, Dashboard } from 'lucide-react';
+import { Bell, Send } from 'lucide-react';
+import { Message, Poll, Dashboard } from '@/components/lucide-react-icons';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
