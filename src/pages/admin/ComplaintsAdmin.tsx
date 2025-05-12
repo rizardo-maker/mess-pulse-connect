@@ -39,9 +39,10 @@ const ComplaintsAdmin = () => {
   const fetchComplaints = async () => {
     setLoading(true);
     try {
+      // First, get the complaints
       let query = supabase
         .from('complaints')
-        .select('*, profiles(username)');
+        .select('*');
       
       // Filter based on active tab
       if (activeTab === "pending") {
@@ -55,11 +56,40 @@ const ComplaintsAdmin = () => {
       // Order by creation date, newest first
       query = query.order('created_at', { ascending: false });
       
-      const { data, error } = await query;
+      const { data: complaintsData, error: complaintsError } = await query;
       
-      if (error) throw error;
+      if (complaintsError) throw complaintsError;
       
-      setComplaints(data || []);
+      // If we have complaints, fetch user profiles separately and join them in JavaScript
+      if (complaintsData && complaintsData.length > 0) {
+        // Get unique user IDs from complaints
+        const userIds = [...new Set(complaintsData.map(complaint => complaint.user_id))];
+        
+        // Fetch profiles for these users
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .in('id', userIds);
+          
+        if (profilesError) throw profilesError;
+        
+        // Create a lookup object for quick profile access
+        const profilesLookup = (profilesData || []).reduce((acc, profile) => {
+          acc[profile.id] = profile;
+          return acc;
+        }, {});
+        
+        // Join the data
+        const completeData = complaintsData.map(complaint => ({
+          ...complaint,
+          profile: profilesLookup[complaint.user_id] || null
+        }));
+        
+        setComplaints(completeData);
+      } else {
+        setComplaints([]);
+      }
+      
     } catch (error) {
       console.error("Error fetching complaints:", error);
       toast.error("Failed to load complaints");
@@ -157,7 +187,7 @@ const ComplaintsAdmin = () => {
                           {complaints.map((complaint) => (
                             <TableRow key={complaint.id}>
                               <TableCell className="font-medium">{complaint.title}</TableCell>
-                              <TableCell>{complaint.profiles?.username || complaint.user_id}</TableCell>
+                              <TableCell>{complaint.profile?.username || complaint.user_id}</TableCell>
                               <TableCell>{formatDate(complaint.created_at)}</TableCell>
                               <TableCell>{getStatusBadge(complaint.status)}</TableCell>
                               <TableCell>
