@@ -41,7 +41,7 @@ const ComplaintsAdmin = () => {
     try {
       let query = supabase
         .from('complaints')
-        .select('*, profiles:user_id(username)');
+        .select('*, profiles(username)');
       
       // Filter based on active tab
       if (activeTab === "pending") {

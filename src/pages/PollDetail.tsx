@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import {
   ChartContainer,
   ChartTooltip,
@@ -30,6 +30,7 @@ const PollDetail = () => {
   const [loading, setLoading] = useState(true);
   const [pollResults, setPollResults] = useState<any>({});
   const [totalStudents, setTotalStudents] = useState(0);
+  const [pollEnded, setPollEnded] = useState(false);
 
   useEffect(() => {
     if (!pollId) return;
@@ -55,7 +56,9 @@ const PollDetail = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'poll_responses', filter: `poll_id=eq.${pollId}` },
         () => {
-          fetchPollResults();
+          if (hasVoted || pollEnded) {
+            fetchPollResults();
+          }
         }
       )
       .subscribe();
@@ -64,7 +67,7 @@ const PollDetail = () => {
       supabase.removeChannel(pollsChannel);
       supabase.removeChannel(responsesChannel);
     };
-  }, [pollId, user?.id]);
+  }, [pollId, user?.id, hasVoted, pollEnded]);
   
   const fetchTotalStudents = async () => {
     try {
@@ -99,6 +102,11 @@ const PollDetail = () => {
       
       setPoll(data);
       
+      // Check if poll has ended
+      const today = new Date();
+      const endDate = new Date(data.end_date);
+      setPollEnded(endDate < today);
+      
       if (user) {
         await checkUserVote();
       } else {
@@ -106,7 +114,10 @@ const PollDetail = () => {
         setSelectedOption(null);
       }
       
-      await fetchPollResults();
+      // Only fetch results if the user has voted or the poll has ended
+      if (user && (hasVoted || endDate < today)) {
+        await fetchPollResults();
+      }
     } catch (error) {
       console.error("Error fetching poll:", error);
       toast.error("Failed to load poll");
@@ -297,12 +308,18 @@ const PollDetail = () => {
                     {poll.description}
                   </CardDescription>
                   <p className="text-sm text-gray-500">
-                    Poll ends on: {formatDate(poll.end_date)}
+                    Poll {pollEnded ? 'ended' : 'ends'} on: {formatDate(poll.end_date)}
                   </p>
+                  {pollEnded && (
+                    <div className="mt-2 flex items-center gap-2 p-2 bg-amber-50 rounded-md text-amber-700">
+                      <AlertCircle className="h-4 w-4" />
+                      <p className="text-sm">This poll has ended.</p>
+                    </div>
+                  )}
                 </CardHeader>
                 
                 <CardContent>
-                  {!hasVoted ? (
+                  {!hasVoted && !pollEnded ? (
                     <RadioGroup 
                       value={selectedOption || undefined} 
                       onValueChange={setSelectedOption}
@@ -319,7 +336,9 @@ const PollDetail = () => {
                     </RadioGroup>
                   ) : (
                     <div className="space-y-4">
-                      <p className="font-medium text-green-600">Thank you for voting!</p>
+                      {(hasVoted || pollEnded) && <p className="font-medium text-green-600">
+                        {hasVoted ? "Thank you for voting!" : "Poll results:"}
+                      </p>}
                       <div className="space-y-3">
                         {poll.options.map((option: string, index: number) => (
                           <div key={index} className="space-y-1">
@@ -348,48 +367,50 @@ const PollDetail = () => {
                         ))}
                       </div>
                       
-                      <div className="pt-6 pb-2">
-                        <ChartContainer className="h-60" config={{}}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <ChartTooltip 
-                                content={({ active, payload }) => {
-                                  if (active && payload && payload.length) {
-                                    return (
-                                      <ChartTooltipContent>
-                                        <div className="space-y-1">
-                                          <p className="font-medium">{payload[0].name}</p>
-                                          <p className="text-sm text-muted-foreground">
-                                            Votes: {payload[0].value}
-                                          </p>
-                                        </div>
-                                      </ChartTooltipContent>
-                                    );
+                      {(hasVoted || pollEnded) && (
+                        <div className="pt-6 pb-2">
+                          <ChartContainer className="h-60" config={{}}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <ChartTooltip 
+                                  content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                      return (
+                                        <ChartTooltipContent>
+                                          <div className="space-y-1">
+                                            <p className="font-medium">{payload[0].name}</p>
+                                            <p className="text-sm text-muted-foreground">
+                                              Votes: {payload[0].value}
+                                            </p>
+                                          </div>
+                                        </ChartTooltipContent>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Pie
+                                  data={pollResults.chartData || []}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                  nameKey="name"
+                                  label={({ name, percent }) => 
+                                    `${name}: ${(percent * 100).toFixed(0)}%`
                                   }
-                                  return null;
-                                }}
-                              />
-                              <Pie
-                                data={pollResults.chartData || []}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                outerRadius={80}
-                                fill="#8884d8"
-                                dataKey="value"
-                                nameKey="name"
-                                label={({ name, percent }) => 
-                                  `${name}: ${(percent * 100).toFixed(0)}%`
-                                }
-                              >
-                                {(pollResults.chartData || []).map((entry: any, index: number) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </ChartContainer>
-                      </div>
+                                >
+                                  {(pollResults.chartData || []).map((entry: any, index: number) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </ChartContainer>
+                        </div>
+                      )}
                       
                       <p className="text-sm text-gray-500 mt-4">
                         Total votes: {pollResults.totalVotes || 0}
@@ -398,7 +419,7 @@ const PollDetail = () => {
                   )}
                 </CardContent>
                 
-                {!hasVoted && (
+                {!hasVoted && !pollEnded && (
                   <CardFooter>
                     <Button 
                       onClick={handleSubmitVote} 
