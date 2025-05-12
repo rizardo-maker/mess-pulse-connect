@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Eye, BarChart } from "lucide-react";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const PollsAdmin = () => {
   const { user } = useAuth();
@@ -33,6 +34,10 @@ const PollsAdmin = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingPollId, setDeletingPollId] = useState<string | null>(null);
   const [totalStudents, setTotalStudents] = useState(0);
+  const [selectedPoll, setSelectedPoll] = useState<any>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [pollResponses, setPollResponses] = useState<any[]>([]);
+  const [loadingResponses, setLoadingResponses] = useState(false);
   
   const pollForm = useForm({
     defaultValues: {
@@ -65,6 +70,9 @@ const PollsAdmin = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'poll_responses' },
         () => {
+          if (selectedPoll) {
+            fetchPollResponses(selectedPoll.id);
+          }
           fetchActivePolls();
         }
       )
@@ -125,6 +133,25 @@ const PollsAdmin = () => {
       toast.error("Failed to load polls");
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const fetchPollResponses = async (pollId: string) => {
+    setLoadingResponses(true);
+    try {
+      const { data, error } = await supabase
+        .from('poll_responses')
+        .select('*, profiles:user_id(username)')
+        .eq('poll_id', pollId);
+        
+      if (error) throw error;
+      
+      setPollResponses(data || []);
+    } catch (error) {
+      console.error("Error fetching poll responses:", error);
+      toast.error("Failed to load poll responses");
+    } finally {
+      setLoadingResponses(false);
     }
   };
   
@@ -206,6 +233,32 @@ const PollsAdmin = () => {
       setDeletingPollId(null);
       setConfirmDeleteId(null);
     }
+  };
+
+  const handleViewPoll = (poll: any) => {
+    setSelectedPoll(poll);
+    fetchPollResponses(poll.id);
+    setViewDialogOpen(true);
+  };
+
+  const calculateOptionPercentages = () => {
+    if (!selectedPoll || pollResponses.length === 0) return {};
+    
+    const optionCounts = {};
+    pollResponses.forEach(response => {
+      if (optionCounts[response.selected_option]) {
+        optionCounts[response.selected_option]++;
+      } else {
+        optionCounts[response.selected_option] = 1;
+      }
+    });
+    
+    const optionPercentages = {};
+    Object.keys(optionCounts).forEach(option => {
+      optionPercentages[option] = (optionCounts[option] / pollResponses.length) * 100;
+    });
+    
+    return { counts: optionCounts, percentages: optionPercentages };
   };
 
   const formatDate = (dateString: string) => {
@@ -364,19 +417,29 @@ const PollsAdmin = () => {
                           <TableCell>{formatDate(poll.end_date)}</TableCell>
                           <TableCell>{poll.votes}</TableCell>
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setConfirmDeleteId(poll.id)}
-                              disabled={deletingPollId === poll.id}
-                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            >
-                              {deletingPollId === poll.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </Button>
+                            <div className="flex space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleViewPoll(poll)}
+                                className="h-8 w-8 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setConfirmDeleteId(poll.id)}
+                                disabled={deletingPollId === poll.id}
+                                className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                              >
+                                {deletingPollId === poll.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -390,6 +453,103 @@ const PollsAdmin = () => {
           </div>
         </div>
       </div>
+      
+      {/* View Poll Dialog */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-rgukt-blue">{selectedPoll?.title}</DialogTitle>
+            <DialogDescription className="text-gray-600">
+              Created on {selectedPoll?.created_at && formatDate(selectedPoll.created_at)} • Ends on {selectedPoll?.end_date && formatDate(selectedPoll.end_date)}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 my-4">
+            <div>
+              <h3 className="text-lg font-medium">Description:</h3>
+              <p className="mt-1 text-gray-600">{selectedPoll?.description}</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Poll Options</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {selectedPoll?.options && (
+                    <ul className="space-y-2">
+                      {selectedPoll.options.map((option, index) => {
+                        const results = calculateOptionPercentages();
+                        const count = results.counts?.[option] || 0;
+                        const percentage = results.percentages?.[option] || 0;
+                        
+                        return (
+                          <li key={index} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span>{option}</span>
+                              <span>{count} votes ({percentage.toFixed(1)}%)</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2.5">
+                              <div className="bg-rgukt-blue h-2.5 rounded-full" style={{ width: `${percentage}%` }}></div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Responses ({pollResponses.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="max-h-[300px] overflow-y-auto">
+                  {loadingResponses ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-rgukt-blue" />
+                    </div>
+                  ) : pollResponses.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Student</TableHead>
+                          <TableHead>Selected Option</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pollResponses.map(response => (
+                          <TableRow key={response.id}>
+                            <TableCell>{response.profiles?.username || response.user_id}</TableCell>
+                            <TableCell>{response.selected_option}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-center py-4 text-gray-500">No responses yet</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => {
+                setConfirmDeleteId(selectedPoll?.id);
+                setViewDialogOpen(false);
+              }}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Poll
+            </Button>
+            <Button onClick={() => setViewDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Confirmation Dialog for Deleting Polls */}
       <AlertDialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>

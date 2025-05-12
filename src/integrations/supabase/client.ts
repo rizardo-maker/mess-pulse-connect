@@ -42,7 +42,7 @@ const enableRealtimeForTable = async (tableName: string) => {
     // Fix: Use proper typing for the RPC call parameters
     await supabase.rpc('supabase_functions.extensions.enable_realtime', { 
       relation: `public.${tableName}` 
-    });
+    } as any); // Use type assertion to fix the TypeScript error
     console.log(`Realtime enabled for ${tableName}`);
   } catch (error) {
     // This is fine if it errors because the table is already added
