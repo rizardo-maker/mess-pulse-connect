@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,13 @@ import { Message, Poll, Dashboard } from '@/components/lucide-react-icons';
 const AdminDashboard = () => {
   const { user } = useAuth();
   const [isCreatingNotification, setIsCreatingNotification] = useState(false);
+  const [quickStats, setQuickStats] = useState({
+    totalStudents: 0,
+    unresolvedComplaints: 0,
+    activePolls: 0,
+    notificationsThisWeek: 0
+  });
+  const [loading, setLoading] = useState(true);
 
   const notificationForm = useForm({
     defaultValues: {
@@ -27,6 +34,116 @@ const AdminDashboard = () => {
       link: '',
     }
   });
+
+  useEffect(() => {
+    fetchQuickStats();
+
+    // Set up real-time subscription for stats
+    const pollsChannel = supabase
+      .channel('admin-polls-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'polls' },
+        () => {
+          fetchQuickStats();
+        }
+      )
+      .subscribe();
+      
+    const complaintsChannel = supabase
+      .channel('admin-complaints-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'complaints' },
+        () => {
+          fetchQuickStats();
+        }
+      )
+      .subscribe();
+      
+    const notificationsChannel = supabase
+      .channel('admin-notifications-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        () => {
+          fetchQuickStats();
+        }
+      )
+      .subscribe();
+    
+    // Set up real-time subscription for profiles
+    const profilesChannel = supabase
+      .channel('admin-profiles-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => {
+          fetchQuickStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pollsChannel);
+      supabase.removeChannel(complaintsChannel);
+      supabase.removeChannel(notificationsChannel);
+      supabase.removeChannel(profilesChannel);
+    };
+  }, []);
+
+  const fetchQuickStats = async () => {
+    setLoading(true);
+    try {
+      // Get total students count
+      const { count: studentsCount, error: studentsError } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'visitor');
+      
+      if (studentsError) throw studentsError;
+
+      // Get unresolved complaints count
+      const { count: unresolvedCount, error: complaintsError } = await supabase
+        .from('complaints')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'Pending');
+      
+      if (complaintsError) throw complaintsError;
+
+      // Get active polls count
+      const today = new Date().toISOString().split('T')[0];
+      const { count: pollsCount, error: pollsError } = await supabase
+        .from('polls')
+        .select('*', { count: 'exact', head: true })
+        .gte('end_date', today);
+      
+      if (pollsError) throw pollsError;
+
+      // Get notifications from this week
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const { count: notificationsCount, error: notificationsError } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', oneWeekAgo.toISOString());
+      
+      if (notificationsError) throw notificationsError;
+
+      setQuickStats({
+        totalStudents: studentsCount || 0,
+        unresolvedComplaints: unresolvedCount || 0,
+        activePolls: pollsCount || 0,
+        notificationsThisWeek: notificationsCount || 0
+      });
+
+    } catch (error) {
+      console.error("Error fetching quick stats:", error);
+      toast.error("Failed to load dashboard stats");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateNotification = async (formData: any) => {
     setIsCreatingNotification(true);
@@ -46,6 +163,7 @@ const AdminDashboard = () => {
       
       toast.success("Notification created successfully");
       notificationForm.reset();
+      fetchQuickStats(); // Refresh stats after creating notification
     } catch (error) {
       console.error("Error creating notification:", error);
       toast.error("Failed to create notification");
@@ -167,9 +285,11 @@ const AdminDashboard = () => {
                       <Message className="mr-2 h-4 w-4" />
                       Manage Complaints
                     </span>
-                    <span className="ml-auto bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded">
-                      New
-                    </span>
+                    {quickStats.unresolvedComplaints > 0 && (
+                      <span className="ml-auto bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded">
+                        {quickStats.unresolvedComplaints} New
+                      </span>
+                    )}
                   </Button>
                 </Link>
                 
@@ -195,24 +315,35 @@ const AdminDashboard = () => {
                 <CardTitle className="text-rgukt-blue">Quick Stats</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Total Students</span>
-                    <span className="font-semibold">1,245</span>
+                {loading ? (
+                  <div className="flex justify-center py-4">
+                    <div className="animate-pulse space-y-2 w-full">
+                      <div className="h-4 bg-gray-200 rounded w-full"></div>
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-4 bg-gray-200 rounded w-full"></div>
+                      <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Unresolved Complaints</span>
-                    <span className="font-semibold text-red-500">8</span>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Total Students</span>
+                      <span className="font-semibold">{quickStats.totalStudents}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Unresolved Complaints</span>
+                      <span className="font-semibold text-red-500">{quickStats.unresolvedComplaints}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Active Polls</span>
+                      <span className="font-semibold">{quickStats.activePolls}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Notifications This Week</span>
+                      <span className="font-semibold">{quickStats.notificationsThisWeek}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>Active Polls</span>
-                    <span className="font-semibold">2</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Notifications This Week</span>
-                    <span className="font-semibold">5</span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

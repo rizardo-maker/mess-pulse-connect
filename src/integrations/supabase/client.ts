@@ -6,14 +6,32 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://yleuwsgutjgncmpbndaw.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsZXV3c2d1dGpnbmNtcGJuZGF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY4NjI0MDksImV4cCI6MjA2MjQzODQwOX0.4rSTAfCeLA6vMzhKtZnjV89dPVRGG2-gtrSFKQhaFBA";
 
-// Use globalThis to ensure we're using the same instance across imports
+// Create a singleton Supabase client
 // @ts-ignore
 const globalWithSupabase = globalThis as typeof globalThis & {
   supabase: ReturnType<typeof createClient<Database>>
 };
 
 // Create the client if it doesn't exist in the global scope
-export const supabase = globalWithSupabase.supabase || createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const supabase = globalWithSupabase.supabase || createClient<Database>(
+  SUPABASE_URL, 
+  SUPABASE_PUBLISHABLE_KEY,
+  {
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    },
+    db: {
+      schema: 'public'
+    },
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  }
+);
 
 // Store the client in the global scope to avoid multiple instances
 if (typeof window !== 'undefined') {

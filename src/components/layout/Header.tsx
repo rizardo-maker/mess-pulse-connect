@@ -37,7 +37,7 @@ const Header = () => {
         <div className="container flex flex-col md:flex-row justify-between items-center">
           <div className="flex items-center gap-4">
             <img 
-              src="/placeholder.svg" 
+              src="/rgukt-logo.png" 
               alt="RGUKT Logo" 
               className="h-16 w-16 object-contain"
             />

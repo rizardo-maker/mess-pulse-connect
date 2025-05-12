@@ -32,6 +32,8 @@ const PollDetail = () => {
   const [totalStudents, setTotalStudents] = useState(0);
 
   useEffect(() => {
+    if (!pollId) return;
+    
     fetchPoll();
     fetchTotalStudents();
     
@@ -62,7 +64,7 @@ const PollDetail = () => {
       supabase.removeChannel(pollsChannel);
       supabase.removeChannel(responsesChannel);
     };
-  }, [pollId]);
+  }, [pollId, user?.id]);
   
   const fetchTotalStudents = async () => {
     try {
@@ -96,8 +98,15 @@ const PollDetail = () => {
       if (error) throw error;
       
       setPoll(data);
-      checkUserVote();
-      fetchPollResults();
+      
+      if (user) {
+        await checkUserVote();
+      } else {
+        setHasVoted(false);
+        setSelectedOption(null);
+      }
+      
+      await fetchPollResults();
     } catch (error) {
       console.error("Error fetching poll:", error);
       toast.error("Failed to load poll");
@@ -196,6 +205,22 @@ const PollDetail = () => {
     setIsSubmitting(true);
     
     try {
+      // Check if user already voted
+      const { data: existingVote, error: checkError } = await supabase
+        .from('poll_responses')
+        .select('*')
+        .eq('poll_id', pollId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+        
+      if (checkError) throw checkError;
+      
+      if (existingVote) {
+        toast.error("You have already voted in this poll");
+        setHasVoted(true);
+        return;
+      }
+      
       const { error } = await supabase
         .from('poll_responses')
         .insert({
@@ -208,13 +233,13 @@ const PollDetail = () => {
       
       toast.success("Your vote has been recorded successfully!");
       setHasVoted(true);
-      fetchPollResults();
+      await fetchPollResults();
     } catch (error: any) {
       console.error("Error submitting vote:", error);
       
       if (error.code === '23505') {
         toast.error("You have already voted in this poll");
-        checkUserVote();
+        await checkUserVote();
       } else {
         toast.error("Failed to submit vote. Please try again.");
       }
@@ -299,19 +324,26 @@ const PollDetail = () => {
                         {poll.options.map((option: string, index: number) => (
                           <div key={index} className="space-y-1">
                             <div className="flex justify-between text-sm">
-                              <span>{option}</span>
+                              <span className={option === selectedOption ? "font-semibold" : ""}>
+                                {option} {option === selectedOption && "(Your vote)"}
+                              </span>
                               <span>
-                                {pollResults.percentages && pollResults.percentages[option] 
+                                {pollResults.percentages && pollResults.percentages[option] !== undefined 
                                   ? pollResults.percentages[option].toFixed(1) 
                                   : 0}%
                               </span>
                             </div>
                             <Progress 
-                              value={pollResults.percentages && pollResults.percentages[option] 
+                              value={pollResults.percentages && pollResults.percentages[option] !== undefined
                                 ? pollResults.percentages[option]
                                 : 0} 
-                              className="h-2" 
+                              className={option === selectedOption ? "h-2 bg-blue-100" : "h-2"} 
                             />
+                            <div className="text-xs text-right text-gray-500">
+                              {pollResults.optionCounts && pollResults.optionCounts[option] !== undefined
+                                ? pollResults.optionCounts[option]
+                                : 0} votes
+                            </div>
                           </div>
                         ))}
                       </div>
