@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Bell, Send } from 'lucide-react';
 import { Message, Poll, Dashboard } from '@/components/lucide-react-icons';
+import NotificationItem from "@/components/admin/NotificationItem";
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -25,6 +25,8 @@ const AdminDashboard = () => {
     notificationsThisWeek: 0
   });
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
 
   const notificationForm = useForm({
     defaultValues: {
@@ -37,6 +39,7 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchQuickStats();
+    fetchNotifications();
 
     // Set up real-time subscription for stats
     const pollsChannel = supabase
@@ -68,6 +71,7 @@ const AdminDashboard = () => {
         { event: '*', schema: 'public', table: 'notifications' },
         () => {
           fetchQuickStats();
+          fetchNotifications();
         }
       )
       .subscribe();
@@ -145,6 +149,25 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchNotifications = async () => {
+    setIsLoadingNotifications(true);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      toast.error("Failed to load notifications");
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
+
   const handleCreateNotification = async (formData: any) => {
     setIsCreatingNotification(true);
     
@@ -172,6 +195,11 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleNotificationDelete = (deletedId: string) => {
+    setNotifications(notifications.filter(notification => notification.id !== deletedId));
+    fetchQuickStats(); // Update the notifications count in stats
+  };
+
   return (
     <Layout>
       <div className="container py-8">
@@ -189,8 +217,9 @@ const AdminDashboard = () => {
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="notification" className="w-full">
-                  <TabsList className="grid grid-cols-2 mb-6">
-                    <TabsTrigger value="notification">Notifications</TabsTrigger>
+                  <TabsList className="grid grid-cols-3 mb-6">
+                    <TabsTrigger value="notification">Create Notification</TabsTrigger>
+                    <TabsTrigger value="manage-notifications">Manage Notifications</TabsTrigger>
                     <TabsTrigger value="links">Quick Links</TabsTrigger>
                   </TabsList>
                   
@@ -243,6 +272,45 @@ const AdminDashboard = () => {
                         {isCreatingNotification ? "Creating..." : "Create Notification"}
                       </Button>
                     </form>
+                  </TabsContent>
+                  
+                  <TabsContent value="manage-notifications">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-medium">Recent Notifications</h3>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={fetchNotifications}
+                          disabled={isLoadingNotifications}
+                        >
+                          Refresh
+                        </Button>
+                      </div>
+                      
+                      {isLoadingNotifications ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-pulse space-y-4 w-full">
+                            <div className="h-20 bg-gray-200 rounded"></div>
+                            <div className="h-20 bg-gray-200 rounded"></div>
+                          </div>
+                        </div>
+                      ) : notifications.length > 0 ? (
+                        <div className="space-y-4">
+                          {notifications.map((notification) => (
+                            <NotificationItem 
+                              key={notification.id} 
+                              notification={notification}
+                              onDelete={handleNotificationDelete}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          No notifications found
+                        </div>
+                      )}
+                    </div>
                   </TabsContent>
                   
                   <TabsContent value="links">
