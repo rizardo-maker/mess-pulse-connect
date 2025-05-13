@@ -39,10 +39,11 @@ if (typeof window !== 'undefined') {
 // Enable realtime subscriptions for relevant tables
 const enableRealtimeForTable = async (tableName: string) => {
   try {
-    // Fix TypeScript error by using Record<string, any> to type the parameters
+    // Cast parameters object to Record<string, any> to resolve type errors
+    const params: Record<string, any> = { relation: `public.${tableName}` };
     await supabase.rpc(
-      'supabase_functions.extensions.enable_realtime', 
-      { relation: `public.${tableName}` } as Record<string, any>
+      'supabase_functions.extensions.enable_realtime',
+      params
     );
     console.log(`Realtime enabled for ${tableName}`);
   } catch (error) {
