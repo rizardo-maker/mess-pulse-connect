@@ -4,14 +4,17 @@ import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom"; // Add useNavigate
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext"; // Import auth context
 
 const Index = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [activePolls, setActivePolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate(); // Use navigation hook
+  const { user } = useAuth(); // Get authentication state
 
   useEffect(() => {
     fetchNotifications();
@@ -95,6 +98,13 @@ const Index = () => {
       day: 'numeric'
     });
   };
+  
+  // Handle notification link click
+  const handleNotificationClick = (link: string) => {
+    if (link && link.startsWith('/')) {
+      navigate(link);
+    }
+  };
 
   return (
     <Layout>
@@ -126,11 +136,15 @@ const Index = () => {
                     <CardContent>
                       <p className="mb-4">{notification.content}</p>
                       {notification.link && (
-                        <Link to={notification.link}>
-                          <Button variant="outline" size="sm" className="text-rgukt-blue border-rgukt-blue hover:bg-rgukt-blue hover:text-white">
-                            View Details
-                          </Button>
-                        </Link>
+                        // Fix: Use button with onClick instead of Link for notification links
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="text-rgukt-blue border-rgukt-blue hover:bg-rgukt-blue hover:text-white"
+                          onClick={() => handleNotificationClick(notification.link)}
+                        >
+                          View Details
+                        </Button>
                       )}
                     </CardContent>
                   </Card>

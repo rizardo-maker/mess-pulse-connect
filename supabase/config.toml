@@ -1,1 +1,15 @@
+
 project_id = "yleuwsgutjgncmpbndaw"
+
+[api]
+# No custom configuration for API
+
+[db]
+# No custom configuration for database
+
+[functions]
+[functions.create-scheduled-polls]
+verify_jwt = true
+
+[functions.setup-cron-jobs]
+verify_jwt = true
