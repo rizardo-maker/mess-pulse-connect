@@ -36,11 +36,13 @@ const Header = () => {
       <div className="bg-rgukt-blue text-white py-3">
         <div className="container flex flex-col md:flex-row justify-between items-center">
           <div className="flex items-center gap-4">
-            <img 
-              src="/rgukt-logo.png" 
-              alt="RGUKT Logo" 
-              className="h-16 w-16 object-contain"
-            />
+            <div className="rounded-full bg-white p-1 shadow-md">
+              <img 
+                src="/lovable-uploads/f74422f7-6c65-4bda-808f-c33d0395b9f6.png" 
+                alt="RGUKT Logo" 
+                className="h-16 w-16 object-contain"
+              />
+            </div>
             <div className="text-center md:text-left">
               <h1 className="text-xl md:text-2xl font-bold">
                 RGUKT Srikakulam

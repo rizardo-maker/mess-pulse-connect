@@ -110,3 +110,32 @@
 .news-ticker:hover {
   animation-play-state: paused;
 }
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+/* Modern styling for logo */
+.logo-container {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.logo-container:hover {
+  transform: scale(1.05);
+}
+
+.logo-image {
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.logo-image:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}

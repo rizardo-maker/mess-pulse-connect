@@ -4,17 +4,18 @@ import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link, useNavigate } from "react-router-dom"; // Add useNavigate
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext"; // Import auth context
+import { Loader2, Bell } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/components/ui/sonner";
 
 const Index = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [activePolls, setActivePolls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate(); // Use navigation hook
-  const { user } = useAuth(); // Get authentication state
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchNotifications();
@@ -26,8 +27,22 @@ const Index = () => {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications' },
-        () => {
+        (payload) => {
           fetchNotifications();
+          
+          // Show a browser notification when a new notification is received
+          if (Notification.permission === "granted") {
+            const notification = payload.new as any;
+            new Notification("RGUKT Mess Portal", {
+              body: notification.title,
+              icon: "/rgukt-logo.png"
+            });
+          }
+          
+          // Show toast notification
+          toast.info(payload.new.title, {
+            description: "New notification received"
+          });
         }
       )
       .on(
@@ -44,8 +59,24 @@ const Index = () => {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'polls' },
-        () => {
+        (payload) => {
           fetchActivePolls();
+          
+          if (payload.eventType === 'INSERT') {
+            // Show a browser notification when a new poll is created
+            if (Notification.permission === "granted") {
+              const poll = payload.new as any;
+              new Notification("New Poll Available", {
+                body: poll.title,
+                icon: "/rgukt-logo.png"
+              });
+            }
+            
+            // Show toast notification
+            toast.info("New poll available", {
+              description: payload.new.title
+            });
+          }
         }
       )
       .subscribe();
@@ -99,10 +130,22 @@ const Index = () => {
     });
   };
   
-  // Handle notification link click
+  // Fixed: Handle notification link click correctly
   const handleNotificationClick = (link: string) => {
     if (link && link.startsWith('/')) {
       navigate(link);
+    }
+  };
+  
+  const requestNotificationPermission = () => {
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          toast.success("Notification permissions granted!");
+        } else {
+          toast.error("Notification permissions denied");
+        }
+      });
     }
   };
 
@@ -112,7 +155,20 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main content - Notifications */}
           <div className="lg:col-span-2">
-            <h2 className="text-2xl font-bold text-rgukt-blue mb-6">Notifications & Updates</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-rgukt-blue">Notifications & Updates</h2>
+              
+              {/* Notification permission button */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex items-center gap-2"
+                onClick={requestNotificationPermission}
+              >
+                <Bell size={16} />
+                Enable Notifications
+              </Button>
+            </div>
             
             {loading ? (
               <div className="flex justify-center py-12">
@@ -136,7 +192,6 @@ const Index = () => {
                     <CardContent>
                       <p className="mb-4">{notification.content}</p>
                       {notification.link && (
-                        // Fix: Use button with onClick instead of Link for notification links
                         <Button 
                           variant="outline" 
                           size="sm" 
