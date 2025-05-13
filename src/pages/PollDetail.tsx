@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, AlertCircle, Users } from 'lucide-react';
 import {
   ChartContainer,
   ChartTooltip,
@@ -31,12 +31,14 @@ const PollDetail = () => {
   const [pollResults, setPollResults] = useState<any>({});
   const [totalStudents, setTotalStudents] = useState(0);
   const [pollEnded, setPollEnded] = useState(false);
+  const [showResults, setShowResults] = useState(true); // Always show results by default
 
   useEffect(() => {
     if (!pollId) return;
     
     fetchPoll();
     fetchTotalStudents();
+    fetchPollResults(); // Always fetch poll results regardless of user vote status
     
     // Set up real-time subscription for polls and responses
     const pollsChannel = supabase
@@ -56,9 +58,7 @@ const PollDetail = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'poll_responses', filter: `poll_id=eq.${pollId}` },
         () => {
-          if (hasVoted || pollEnded) {
-            fetchPollResults();
-          }
+          fetchPollResults(); // Always update results when any vote changes
         }
       )
       .subscribe();
@@ -67,7 +67,7 @@ const PollDetail = () => {
       supabase.removeChannel(pollsChannel);
       supabase.removeChannel(responsesChannel);
     };
-  }, [pollId, user?.id, hasVoted, pollEnded]);
+  }, [pollId, user?.id]);
   
   const fetchTotalStudents = async () => {
     try {
@@ -113,11 +113,6 @@ const PollDetail = () => {
         setHasVoted(false);
         setSelectedOption(null);
       }
-      
-      // Only fetch results if the user has voted or the poll has ended
-      if (user && (hasVoted || endDate < today)) {
-        await fetchPollResults();
-      }
     } catch (error) {
       console.error("Error fetching poll:", error);
       toast.error("Failed to load poll");
@@ -160,10 +155,12 @@ const PollDetail = () => {
       // Get responses for this poll
       const { data: responses, error: responsesError, count } = await supabase
         .from('poll_responses')
-        .select('*', { count: 'exact' })
-        .eq('poll_id', pollId);
+        .select('*', { count: 'exact' });
         
       if (responsesError) throw responsesError;
+      
+      // Get responses only for this poll
+      const pollResponses = responses?.filter(response => response.poll_id === pollId) || [];
       
       // Calculate results for each option
       const optionCounts: Record<string, number> = {};
@@ -177,15 +174,15 @@ const PollDetail = () => {
       }
       
       // Count responses
-      if (responses) {
-        responses.forEach((response) => {
+      if (pollResponses.length > 0) {
+        pollResponses.forEach((response) => {
           const option = response.selected_option;
           optionCounts[option] = (optionCounts[option] || 0) + 1;
         });
       }
       
       // Calculate percentages
-      const totalVotes = count || 0;
+      const totalVotes = pollResponses.length;
       if (totalVotes > 0) {
         Object.keys(optionCounts).forEach(option => {
           results[option] = (optionCounts[option] / totalVotes) * 100;
@@ -199,7 +196,8 @@ const PollDetail = () => {
         chartData: Object.keys(optionCounts).map(option => ({
           name: option,
           value: optionCounts[option]
-        }))
+        })),
+        voters: pollResponses // Store all voters
       });
       
     } catch (error) {
@@ -267,6 +265,11 @@ const PollDetail = () => {
       day: 'numeric'
     });
   };
+
+  // Toggle function for showing/hiding results
+  const toggleShowResults = () => {
+    setShowResults(!showResults);
+  };
   
   return (
     <Layout>
@@ -316,24 +319,79 @@ const PollDetail = () => {
                       <p className="text-sm">This poll has ended.</p>
                     </div>
                   )}
+                  
+                  {!hasVoted && !pollEnded && pollResults.totalVotes > 0 && (
+                    <div className="mt-2 flex items-center gap-2 p-2 bg-blue-50 rounded-md text-blue-700">
+                      <Users className="h-4 w-4" />
+                      <p className="text-sm">
+                        {pollResults.totalVotes} {pollResults.totalVotes === 1 ? 'person has' : 'people have'} voted so far
+                      </p>
+                    </div>
+                  )}
+
+                  {!hasVoted && !pollEnded && (
+                    <div className="mt-3 flex justify-end">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={toggleShowResults}
+                        className="text-xs"
+                      >
+                        {showResults ? "Hide Results" : "Show Results"}
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
                 
                 <CardContent>
                   {!hasVoted && !pollEnded ? (
-                    <RadioGroup 
-                      value={selectedOption || undefined} 
-                      onValueChange={setSelectedOption}
-                      className="space-y-4"
-                    >
-                      {poll.options.map((option: string, index: number) => (
-                        <div key={index} className="flex items-center space-x-2">
-                          <RadioGroupItem value={option} id={`option-${index}`} />
-                          <Label htmlFor={`option-${index}`} className="cursor-pointer">
-                            {option}
-                          </Label>
+                    <div className="space-y-6">
+                      <RadioGroup 
+                        value={selectedOption || undefined} 
+                        onValueChange={setSelectedOption}
+                        className="space-y-4"
+                      >
+                        {poll.options.map((option: string, index: number) => (
+                          <div key={index} className="flex items-center space-x-2">
+                            <RadioGroupItem value={option} id={`option-${index}`} />
+                            <Label htmlFor={`option-${index}`} className="cursor-pointer">
+                              {option}
+                            </Label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+
+                      {showResults && pollResults.totalVotes > 0 && (
+                        <div className="pt-6 mt-4 border-t border-gray-100">
+                          <h3 className="text-sm font-medium text-gray-500 mb-3">Current Results:</h3>
+                          <div className="space-y-3">
+                            {poll.options.map((option: string, index: number) => (
+                              <div key={`result-${index}`} className="space-y-1">
+                                <div className="flex justify-between text-sm">
+                                  <span>{option}</span>
+                                  <span>
+                                    {pollResults.percentages && pollResults.percentages[option] !== undefined 
+                                      ? pollResults.percentages[option].toFixed(1) 
+                                      : 0}%
+                                  </span>
+                                </div>
+                                <Progress 
+                                  value={pollResults.percentages && pollResults.percentages[option] !== undefined
+                                    ? pollResults.percentages[option]
+                                    : 0} 
+                                  className="h-2" 
+                                />
+                                <div className="text-xs text-right text-gray-500">
+                                  {pollResults.optionCounts && pollResults.optionCounts[option] !== undefined
+                                    ? pollResults.optionCounts[option]
+                                    : 0} votes
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
-                    </RadioGroup>
+                      )}
+                    </div>
                   ) : (
                     <div className="space-y-4">
                       {(hasVoted || pollEnded) && <p className="font-medium text-green-600">
