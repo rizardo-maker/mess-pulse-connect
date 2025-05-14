@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2, Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/components/ui/sonner";
+import PollStats from '@/components/stats/PollStats';
 
 const Index = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -152,6 +152,12 @@ const Index = () => {
   return (
     <Layout>
       <div className="container py-8">
+        {/* Add Poll Statistics component */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-rgukt-blue mb-4">Poll Participation</h2>
+          <PollStats />
+        </div>
+        
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main content - Notifications */}
           <div className="lg:col-span-2">
