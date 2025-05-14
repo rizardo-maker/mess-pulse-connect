@@ -29,8 +29,9 @@ const PollStats = () => {
       // Count unique participants in polls
       const { data: participants, error: participantsError } = await supabase
         .from('poll_responses')
-        .select('user_id', { count: 'exact', head: false })
-        .is('user_id', 'not.null');
+        .select('user_id')
+        // Fix: Changed from .is('user_id', 'not.null') to .not('user_id', 'is', null)
+        .not('user_id', 'is', null);
       
       if (participantsError) throw participantsError;
       
