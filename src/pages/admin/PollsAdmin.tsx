@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from "@/contexts/AuthContext";
@@ -123,13 +122,32 @@ const PollsAdmin = () => {
         
       if (pollError) throw pollError;
       
-      // Get responses for this poll
-      const { data: responses, error: responsesError } = await supabase
+      // Get responses for this poll with a simpler query that won't cause type errors
+      const { data: responseData, error: responsesError } = await supabase
         .from('poll_responses')
-        .select('*, profiles:user_id(username)')
+        .select('*')
         .eq('poll_id', pollId);
         
       if (responsesError) throw responsesError;
+      
+      // Query usernames separately to avoid the relation error
+      const userIds = responseData?.map(response => response.user_id) || [];
+      const { data: usernameData } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', userIds);
+
+      // Create a lookup map for usernames
+      const usernameMap: Record<string, string> = {};
+      usernameData?.forEach(profile => {
+        usernameMap[profile.id] = profile.username || 'Anonymous';
+      });
+      
+      // Attach usernames to responses
+      const responses = responseData?.map(response => ({
+        ...response,
+        profiles: { username: usernameMap[response.user_id] || response.user_id }
+      })) || [];
       
       // Calculate results by option
       const results: Record<string, number> = {};
@@ -138,7 +156,7 @@ const PollsAdmin = () => {
           results[option] = 0;
         });
         
-        responses?.forEach(response => {
+        responses.forEach(response => {
           if (results[response.selected_option] !== undefined) {
             results[response.selected_option]++;
           }
@@ -147,9 +165,9 @@ const PollsAdmin = () => {
       
       setPollResponses({
         poll,
-        responses: responses || [],
+        responses,
         results,
-        totalVotes: responses?.length || 0
+        totalVotes: responses.length || 0
       });
     } catch (error) {
       console.error("Error fetching poll responses:", error);
@@ -173,7 +191,7 @@ const PollsAdmin = () => {
     setPollOptions(newOptions);
   };
   
-  const onCreatePoll = async (data) => {
+  const onCreatePoll = async (data: any) => {
     // Validate options
     const validOptions = pollOptions.filter(option => option.trim() !== '');
     

@@ -36,28 +36,39 @@ if (typeof window !== 'undefined') {
   globalWithSupabase.supabase = supabase;
 }
 
-// Enable realtime subscriptions for relevant tables
-const enableRealtimeForTable = async (tableName: string) => {
+// Simplified approach to enable realtime - avoid using custom RPC calls
+const setupPollsRealtime = async () => {
+  console.log('Setting up realtime for polls and responses');
+  
+  // No need for RPC calls - channels will automatically work with proper permissions
   try {
-    // Fix type error by using explicit type assertion
-    await supabase.rpc(
-      'supabase_functions.extensions.enable_realtime', 
-      { relation: `public.${tableName}` } as unknown as Record<string, unknown>
-    );
-    console.log(`Realtime enabled for ${tableName}`);
+    // Directly create channels for the tables
+    const pollsChannel = supabase
+      .channel('public:polls')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'polls' }, (payload) => {
+        console.log('Polls change received:', payload);
+      })
+      .subscribe();
+      
+    const pollResponsesChannel = supabase
+      .channel('public:poll_responses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'poll_responses' }, (payload) => {
+        console.log('Poll responses change received:', payload);
+      })
+      .subscribe();
+      
+    console.log('Realtime enabled for polls');
+    console.log('Realtime enabled for poll_responses');
+    
   } catch (error) {
-    // This is fine if it errors because the table is already added
-    console.log(`Note: ${tableName} may already have realtime enabled`);
+    console.error('Error setting up realtime:', error);
   }
 };
 
-// Initialize realtime for these tables if on client side
+// Initialize realtime if on client side
 if (typeof window !== 'undefined') {
-  Promise.all([
-    enableRealtimeForTable('polls'),
-    enableRealtimeForTable('poll_responses')
-  ]).catch(error => {
-    console.error('Error enabling realtime:', error);
+  setupPollsRealtime().catch(error => {
+    console.error('Error during realtime setup:', error);
   });
 }
 
