@@ -39,9 +39,11 @@ if (typeof window !== 'undefined') {
 // Enable realtime subscriptions for relevant tables
 const enableRealtimeForTable = async (tableName: string) => {
   try {
-    // Fix the TypeScript error by using a type assertion
-    const params = { relation: `public.${tableName}` };
-    await supabase.rpc('supabase_functions.extensions.enable_realtime', params as unknown as Record<string, unknown>);
+    // Fix the TypeScript error by using type assertion with Record<string, unknown>
+    await supabase.rpc(
+      'supabase_functions.extensions.enable_realtime', 
+      { relation: `public.${tableName}` } as Record<string, unknown>
+    );
     console.log(`Realtime enabled for ${tableName}`);
   } catch (error) {
     // This is fine if it errors because the table is already added
@@ -52,8 +54,6 @@ const enableRealtimeForTable = async (tableName: string) => {
 // Initialize realtime for these tables if on client side
 if (typeof window !== 'undefined') {
   Promise.all([
-    enableRealtimeForTable('complaints'),
-    enableRealtimeForTable('notifications'),
     enableRealtimeForTable('polls'),
     enableRealtimeForTable('poll_responses')
   ]).catch(error => {
@@ -62,20 +62,6 @@ if (typeof window !== 'undefined') {
 }
 
 export const setupRealtimeListeners = () => {
-  const complaintsChannel = supabase
-    .channel('public:complaints')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, (payload) => {
-      console.log('Complaints change received:', payload);
-    })
-    .subscribe();
-    
-  const notificationsChannel = supabase
-    .channel('public:notifications')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
-      console.log('Notifications change received:', payload);
-    })
-    .subscribe();
-    
   const pollsChannel = supabase
     .channel('public:polls')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'polls' }, (payload) => {
@@ -91,8 +77,6 @@ export const setupRealtimeListeners = () => {
     .subscribe();
     
   return () => {
-    supabase.removeChannel(complaintsChannel);
-    supabase.removeChannel(notificationsChannel);
     supabase.removeChannel(pollsChannel);
     supabase.removeChannel(pollResponsesChannel);
   };
