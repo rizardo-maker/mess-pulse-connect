@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Poll } from "@/types/poll";
+import { Poll, PollResponsesData } from "@/types/poll";
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,15 +27,19 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 
+interface PollWithVoteCount extends Poll {
+  votes: number;
+}
+
 const PollsAdmin = () => {
   const { user } = useAuth();
-  const [polls, setPolls] = useState<Poll[]>([]);
+  const [polls, setPolls] = useState<PollWithVoteCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingPollId, setDeletingPollId] = useState<string | null>(null);
   const [pollOptions, setPollOptions] = useState(['', '']); // Start with two empty options
   const [viewPollId, setViewPollId] = useState<string | null>(null);
-  const [pollResponses, setPollResponses] = useState<any[]>([]);
+  const [pollResponses, setPollResponses] = useState<PollResponsesData | null>(null);
   const [loadingResponses, setLoadingResponses] = useState(false);
   
   const { register, handleSubmit, reset, formState: { errors } } = useForm({
@@ -128,9 +132,9 @@ const PollsAdmin = () => {
       if (responsesError) throw responsesError;
       
       // Calculate results by option
-      const results = {};
+      const results: Record<string, number> = {};
       if (poll && poll.options) {
-        poll.options.forEach(option => {
+        poll.options.forEach((option: string) => {
           results[option] = 0;
         });
         

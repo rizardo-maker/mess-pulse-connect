@@ -23,3 +23,11 @@ export interface PollWithVotes extends Poll {
   has_voted?: boolean;
   user_vote?: string;
 }
+
+// Add new interface for poll responses with results
+export interface PollResponsesData {
+  poll: Poll;
+  responses: Array<PollResponse & { profiles?: { username: string } }>;
+  results: Record<string, number>;
+  totalVotes: number;
+}
