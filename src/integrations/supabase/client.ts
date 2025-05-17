@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
@@ -38,9 +39,9 @@ if (typeof window !== 'undefined') {
 // Enable realtime subscriptions for relevant tables
 const enableRealtimeForTable = async (tableName: string) => {
   try {
-    // Fix the TypeScript error by using a properly typed parameter object
+    // Fix the TypeScript error by using a type assertion
     const params = { relation: `public.${tableName}` };
-    await supabase.rpc('supabase_functions.extensions.enable_realtime', params);
+    await supabase.rpc('supabase_functions.extensions.enable_realtime', params as unknown as Record<string, unknown>);
     console.log(`Realtime enabled for ${tableName}`);
   } catch (error) {
     // This is fine if it errors because the table is already added
