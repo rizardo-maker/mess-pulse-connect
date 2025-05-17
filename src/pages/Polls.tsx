@@ -68,21 +68,52 @@ const Polls = () => {
           optionVotes[option] = 0;
         });
         
+        // Count unique voters
+        const uniqueVoters = new Set();
+        
+        // Process responses
         responses?.forEach(response => {
-          if (optionVotes[response.selected_option] !== undefined) {
-            optionVotes[response.selected_option]++;
+          // Add voter to set
+          uniqueVoters.add(response.user_id);
+          
+          // For backward compatibility
+          if (typeof response.selected_option === 'string') {
+            if (optionVotes[response.selected_option] !== undefined) {
+              optionVotes[response.selected_option]++;
+            }
+          }
+          
+          // For new multiple selection format
+          if (Array.isArray(response.selected_options)) {
+            response.selected_options.forEach(option => {
+              if (optionVotes[option] !== undefined) {
+                optionVotes[option]++;
+              }
+            });
           }
         });
         
         // Check if current user has voted
         let hasVoted = false;
-        let userVote = undefined;
+        let userVotes: string[] = [];
         
         if (user) {
-          const userResponse = responses?.find(r => r.user_id === user.id);
-          if (userResponse) {
+          const userResponses = responses?.filter(r => r.user_id === user.id);
+          if (userResponses && userResponses.length > 0) {
             hasVoted = true;
-            userVote = userResponse.selected_option;
+            
+            // Collect user votes from both formats
+            userResponses.forEach(response => {
+              if (typeof response.selected_option === 'string') {
+                userVotes.push(response.selected_option);
+              }
+              if (Array.isArray(response.selected_options)) {
+                userVotes = [...userVotes, ...response.selected_options];
+              }
+            });
+            
+            // Remove duplicates
+            userVotes = [...new Set(userVotes)];
           }
         }
         
@@ -91,8 +122,9 @@ const Polls = () => {
           total_votes: responses?.length || 0,
           option_votes: optionVotes,
           has_voted: hasVoted,
-          user_vote: userVote
-        };
+          user_votes: userVotes,
+          voters_count: uniqueVoters.size
+        } as PollWithVotes;
       }));
 
       // Separate active and past polls

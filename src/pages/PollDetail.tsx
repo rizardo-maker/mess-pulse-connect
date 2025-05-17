@@ -61,7 +61,7 @@ const PollDetail = () => {
         .single();
         
       if (error) throw error;
-      setPollData(data);
+      setPollData(data as Poll);
     } catch (error) {
       console.error("Error fetching poll:", error);
       toast.error("Failed to load poll details");

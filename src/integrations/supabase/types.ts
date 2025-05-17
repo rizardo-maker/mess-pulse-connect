@@ -75,6 +75,7 @@ export type Database = {
           id: string
           poll_id: string
           selected_option: string
+          selected_options: string[] | null
           user_id: string
         }
         Insert: {
@@ -82,6 +83,7 @@ export type Database = {
           id?: string
           poll_id: string
           selected_option: string
+          selected_options?: string[] | null
           user_id: string
         }
         Update: {
@@ -89,6 +91,7 @@ export type Database = {
           id?: string
           poll_id?: string
           selected_option?: string
+          selected_options?: string[] | null
           user_id?: string
         }
         Relationships: [
@@ -103,29 +106,35 @@ export type Database = {
       }
       polls: {
         Row: {
+          allow_multiple_votes: boolean
           created_at: string
           created_by: string
           description: string
           end_date: string
           id: string
+          is_anonymous: boolean
           options: string[]
           title: string
         }
         Insert: {
+          allow_multiple_votes?: boolean
           created_at?: string
           created_by: string
           description: string
           end_date: string
           id?: string
+          is_anonymous?: boolean
           options: string[]
           title: string
         }
         Update: {
+          allow_multiple_votes?: boolean
           created_at?: string
           created_by?: string
           description?: string
           end_date?: string
           id?: string
+          is_anonymous?: boolean
           options?: string[]
           title?: string
         }

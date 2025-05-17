@@ -182,6 +182,7 @@ const DynamicPoll = ({ pollId, onVoteComplete }: DynamicPollProps) => {
         .insert({
           poll_id: pollId,
           user_id: user.id,
+          selected_option: selectedOptions[0] || '',
           selected_options: selectedOptions
         });
         

@@ -87,7 +87,7 @@ const PollsAdmin = () => {
           return {
             ...poll,
             votes: count || 0
-          };
+          } as PollWithVoteCount;
         })
       );
       
@@ -166,8 +166,8 @@ const PollsAdmin = () => {
       const uniqueVoters = new Set(responses.map(r => r.user_id));
       
       setPollResponses({
-        poll,
-        responses,
+        poll: poll as Poll,
+        responses: responses as any,
         results,
         totalVotes: Object.values(results).reduce((sum, count) => sum + count, 0),
         votersCount: uniqueVoters.size
@@ -287,7 +287,7 @@ const PollsAdmin = () => {
                             <div className="flex items-center gap-2">
                               {poll.title}
                               {poll.allow_multiple_votes && (
-                                <CheckSquare className="h-4 w-4 text-green-500" title="Multiple options allowed" />
+                                <CheckSquare className="h-4 w-4 text-green-500" aria-label="Multiple options allowed" />
                               )}
                             </div>
                           </TableCell>
