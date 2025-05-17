@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,13 +7,9 @@ import { Poll, PollResponsesData } from "@/types/poll";
 import Layout from '@/components/layout/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { useForm } from "react-hook-form";
-import { Loader2, Trash2, Eye, Plus, X } from "lucide-react";
+import { Loader2, Trash2, Eye, CheckSquare } from "lucide-react";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import AdminPollForm from '@/components/polls/AdminPollForm';
+import DynamicPoll from '@/components/polls/DynamicPoll';
 
 interface PollWithVoteCount extends Poll {
   votes: number;
@@ -36,19 +35,10 @@ const PollsAdmin = () => {
   const [loading, setLoading] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingPollId, setDeletingPollId] = useState<string | null>(null);
-  const [pollOptions, setPollOptions] = useState(['', '']); // Start with two empty options
   const [viewPollId, setViewPollId] = useState<string | null>(null);
-  const [pollResponses, setPollResponses] = useState<PollResponsesData | null>(null);
   const [loadingResponses, setLoadingResponses] = useState(false);
+  const [pollResponses, setPollResponses] = useState<PollResponsesData | null>(null);
   
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
-    defaultValues: {
-      title: '',
-      description: '',
-      endDate: ''
-    }
-  });
-
   useEffect(() => {
     fetchPolls();
     
@@ -157,69 +147,36 @@ const PollsAdmin = () => {
         });
         
         responses.forEach(response => {
-          if (results[response.selected_option] !== undefined) {
+          // Handle both old format (single option) and new format (multiple options)
+          if (typeof response.selected_option === 'string' && results[response.selected_option] !== undefined) {
             results[response.selected_option]++;
+          }
+          
+          if (Array.isArray(response.selected_options)) {
+            response.selected_options.forEach(option => {
+              if (results[option] !== undefined) {
+                results[option]++;
+              }
+            });
           }
         });
       }
+      
+      // Count unique voters
+      const uniqueVoters = new Set(responses.map(r => r.user_id));
       
       setPollResponses({
         poll,
         responses,
         results,
-        totalVotes: responses.length || 0
+        totalVotes: Object.values(results).reduce((sum, count) => sum + count, 0),
+        votersCount: uniqueVoters.size
       });
     } catch (error) {
       console.error("Error fetching poll responses:", error);
       toast.error("Failed to load poll responses");
     } finally {
       setLoadingResponses(false);
-    }
-  };
-  
-  const addOption = () => {
-    setPollOptions([...pollOptions, '']);
-  };
-  
-  const removeOption = (index: number) => {
-    setPollOptions(pollOptions.filter((_, i) => i !== index));
-  };
-  
-  const handleOptionChange = (index: number, value: string) => {
-    const newOptions = [...pollOptions];
-    newOptions[index] = value;
-    setPollOptions(newOptions);
-  };
-  
-  const onCreatePoll = async (data: any) => {
-    // Validate options
-    const validOptions = pollOptions.filter(option => option.trim() !== '');
-    
-    if (validOptions.length < 2) {
-      toast.error("Please provide at least 2 options for the poll");
-      return;
-    }
-    
-    try {
-      const { error } = await supabase
-        .from('polls')
-        .insert({
-          title: data.title,
-          description: data.description,
-          end_date: data.endDate,
-          options: validOptions,
-          created_by: user?.id
-        });
-      
-      if (error) throw error;
-      
-      toast.success("Poll created successfully");
-      reset();
-      setPollOptions(['', '']);
-      await fetchPolls();
-    } catch (error) {
-      console.error("Error creating poll:", error);
-      toast.error("Failed to create poll");
     }
   };
   
@@ -297,91 +254,7 @@ const PollsAdmin = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleSubmit(onCreatePoll)} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Poll Title</Label>
-                    <Input 
-                      id="title"
-                      placeholder="Enter poll title"
-                      {...register("title", { required: "Title is required" })}
-                      className={errors.title ? "border-red-500" : ""}
-                    />
-                    {errors.title && (
-                      <p className="text-red-500 text-sm">{errors.title.message}</p>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea 
-                      id="description"
-                      placeholder="Enter poll description"
-                      {...register("description", { required: "Description is required" })}
-                      className={errors.description ? "border-red-500" : ""}
-                    />
-                    {errors.description && (
-                      <p className="text-red-500 text-sm">{errors.description.message}</p>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="endDate">End Date</Label>
-                    <Input 
-                      id="endDate"
-                      type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      {...register("endDate", { required: "End date is required" })}
-                      className={errors.endDate ? "border-red-500" : ""}
-                    />
-                    {errors.endDate && (
-                      <p className="text-red-500 text-sm">{errors.endDate.message}</p>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Poll Options</Label>
-                    <p className="text-sm text-gray-500 mb-2">Add at least 2 options for your poll</p>
-                    
-                    {pollOptions.map((option, index) => (
-                      <div key={index} className="flex space-x-2 mb-2">
-                        <Input
-                          value={option}
-                          onChange={(e) => handleOptionChange(index, e.target.value)}
-                          placeholder={`Option ${index + 1}`}
-                          className="flex-1"
-                        />
-                        {index > 1 && (
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="icon"
-                            onClick={() => removeOption(index)}
-                            className="text-red-500"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={addOption}
-                      className="mt-2 flex items-center gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Option
-                    </Button>
-                  </div>
-                  
-                  <Button 
-                    type="submit" 
-                    className="w-full bg-rgukt-blue hover:bg-rgukt-lightblue"
-                  >
-                    Create Poll
-                  </Button>
-                </form>
+                <AdminPollForm onSuccess={fetchPolls} />
               </CardContent>
             </Card>
           </div>
@@ -410,7 +283,14 @@ const PollsAdmin = () => {
                     <TableBody>
                       {polls.map(poll => (
                         <TableRow key={poll.id}>
-                          <TableCell className="font-medium">{poll.title}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {poll.title}
+                              {poll.allow_multiple_votes && (
+                                <CheckSquare className="h-4 w-4 text-green-500" title="Multiple options allowed" />
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                               isPollActive(poll.end_date) 
@@ -479,85 +359,11 @@ const PollsAdmin = () => {
                   </DialogDescription>
                 </DialogHeader>
                 
-                <div className="space-y-6 my-4">
-                  <div>
-                    <h3 className="text-lg font-medium">Description:</h3>
-                    <p className="mt-1 text-gray-600">{pollResponses.poll.description}</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Results */}
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-lg">Poll Results</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {pollResponses.poll.options.map((option, index) => {
-                            const votes = pollResponses.results[option] || 0;
-                            const percentage = pollResponses.totalVotes > 0 
-                              ? (votes / pollResponses.totalVotes) * 100 
-                              : 0;
-                            
-                            return (
-                              <div key={index} className="space-y-1">
-                                <div className="flex justify-between text-sm">
-                                  <span>{option}</span>
-                                  <span>{votes} votes ({percentage.toFixed(1)}%)</span>
-                                </div>
-                                <Progress 
-                                  value={percentage}
-                                  className="h-2.5" 
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                        
-                        <p className="text-sm font-medium mt-4">
-                          Total votes: {pollResponses.totalVotes}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    
-                    {/* Responses */}
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-lg">
-                          Responses ({pollResponses.responses.length})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="max-h-[300px] overflow-y-auto">
-                          {pollResponses.responses.length > 0 ? (
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>User</TableHead>
-                                  <TableHead>Selected Option</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {pollResponses.responses.map(response => (
-                                  <TableRow key={response.id}>
-                                    <TableCell>
-                                      {response.profiles?.username || response.user_id}
-                                    </TableCell>
-                                    <TableCell>{response.selected_option}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          ) : (
-                            <p className="text-center py-4 text-gray-500">No responses yet</p>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                <div className="mt-4">
+                  <DynamicPoll pollId={viewPollId} />
                 </div>
                 
-                <DialogFooter>
+                <DialogFooter className="mt-4">
                   <Button 
                     variant="destructive"
                     className="bg-red-600 hover:bg-red-700"
