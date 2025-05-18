@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Bell, Info } from "lucide-react";
+import { Loader2, Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/components/ui/sonner";
 import PollStats from '@/components/stats/PollStats';
@@ -176,22 +176,6 @@ const Index = () => {
               </Button>
             </div>
             
-            {/* System Summary Link */}
-            <div className="mb-6 bg-blue-50 rounded-lg p-4 flex items-start gap-3">
-              <Info className="h-5 w-5 text-rgukt-blue mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="font-medium text-rgukt-blue">About This System</h3>
-                <p className="text-sm text-gray-600 mb-2">
-                  Learn how the RGUKT Mess Portal works, its features, and technical implementation.
-                </p>
-                <Link to="/system-summary">
-                  <Button size="sm" variant="outline" className="text-rgukt-blue border-rgukt-blue hover:bg-rgukt-blue hover:text-white">
-                    View System Summary
-                  </Button>
-                </Link>
-              </div>
-            </div>
-            
             {loading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-10 w-10 animate-spin text-rgukt-blue" />
@@ -252,11 +236,6 @@ const Index = () => {
                 <Link to="/polls">
                   <Button variant="outline" className="w-full border-rgukt-blue text-rgukt-blue hover:bg-rgukt-blue hover:text-white">
                     View Active Polls
-                  </Button>
-                </Link>
-                <Link to="/system-summary">
-                  <Button variant="secondary" className="w-full">
-                    System Documentation
                   </Button>
                 </Link>
               </CardContent>

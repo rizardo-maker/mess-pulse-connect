@@ -1,3 +1,4 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,8 +11,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Complaints from "./pages/Complaints";
 import Polls from "./pages/Polls";
-import PollDetail from "./pages/PollDetail"; 
-import SystemSummary from "./pages/SystemSummary"; // New import
+import PollDetail from "./pages/PollDetail"; // New component for individual polls
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import ComplaintsAdmin from "./pages/admin/ComplaintsAdmin";
@@ -36,7 +36,6 @@ const AppContent = () => {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/system-summary" element={<SystemSummary />} /> {/* New route for system summary */}
         
         {/* Protected routes accessible for all authenticated users */}
         <Route path="/complaints" element={
