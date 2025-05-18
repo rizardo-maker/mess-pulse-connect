@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Loader2, Trash2, Eye, CheckSquare } from "lucide-react";
+import { Loader2, Trash2, Eye, CheckSquare, Users } from "lucide-react";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Progress } from "@/components/ui/progress";
 import AdminPollForm from '@/components/polls/AdminPollForm';
 import DynamicPoll from '@/components/polls/DynamicPoll';
+import { Badge } from '@/components/ui/badge';
 
 interface PollWithVoteCount extends Poll {
   votes: number;
@@ -38,6 +38,7 @@ const PollsAdmin = () => {
   const [viewPollId, setViewPollId] = useState<string | null>(null);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [pollResponses, setPollResponses] = useState<PollResponsesData | null>(null);
+  const [showVoterDetails, setShowVoterDetails] = useState(false);
   
   useEffect(() => {
     fetchPolls();
@@ -212,6 +213,7 @@ const PollsAdmin = () => {
   const handleViewPoll = (pollId: string) => {
     setViewPollId(pollId);
     fetchPollResponses(pollId);
+    setShowVoterDetails(false);
   };
 
   const formatDate = (dateString: string) => {
@@ -359,7 +361,92 @@ const PollsAdmin = () => {
                   </DialogDescription>
                 </DialogHeader>
                 
-                <div className="mt-4">
+                <div className="mt-4 space-y-6">
+                  {/* Detailed Vote Breakdown */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex justify-between items-center">
+                        <CardTitle className="text-lg">Vote Breakdown</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setShowVoterDetails(!showVoterDetails)}
+                            className="flex items-center gap-1"
+                          >
+                            <Users className="h-4 w-4" />
+                            {showVoterDetails ? "Hide Voters" : "Show Voters"}
+                          </Button>
+                        </div>
+                      </div>
+                      <CardDescription>
+                        {pollResponses.votersCount} {pollResponses.votersCount === 1 ? 'student has' : 'students have'} voted in this poll
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {pollResponses.poll.options.map((option, index) => {
+                          const votes = pollResponses.results[option] || 0;
+                          const percentage = pollResponses.totalVotes > 0 
+                            ? (votes / pollResponses.totalVotes) * 100 
+                            : 0;
+                          
+                          // Get students who voted for this option
+                          const studentsWhoVoted = pollResponses.responses
+                            .filter(response => {
+                              if (typeof response.selected_option === 'string') {
+                                return response.selected_option === option;
+                              }
+                              if (Array.isArray(response.selected_options)) {
+                                return response.selected_options.includes(option);
+                              }
+                              return false;
+                            })
+                            .map(response => response.profiles?.username || 'Anonymous User');
+                            
+                          return (
+                            <div key={index} className="space-y-1">
+                              <div className="flex justify-between">
+                                <div className="font-medium">{option}</div>
+                                <div>
+                                  <Badge variant="outline" className="ml-2">
+                                    {votes} {votes === 1 ? 'vote' : 'votes'} ({percentage.toFixed(1)}%)
+                                  </Badge>
+                                </div>
+                              </div>
+                              
+                              <Progress value={percentage} className="h-2" />
+                              
+                              {/* Show students who voted for this option */}
+                              {showVoterDetails && !pollResponses.poll.is_anonymous && (
+                                <div className="bg-blue-50 p-2 rounded-md mt-1 text-sm">
+                                  <p className="font-medium mb-1">Students who selected this option:</p>
+                                  {studentsWhoVoted.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {studentsWhoVoted.map((student, idx) => (
+                                        <Badge key={idx} variant="secondary" className="text-xs">
+                                          {student}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-gray-500 italic">No students selected this option</p>
+                                  )}
+                                </div>
+                              )}
+                              {showVoterDetails && pollResponses.poll.is_anonymous && (
+                                <div className="bg-yellow-50 p-2 rounded-md mt-1 text-sm">
+                                  <p className="text-amber-700">This is an anonymous poll. Voter details are not available.</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Live Poll View */}
                   <DynamicPoll pollId={viewPollId} />
                 </div>
                 
