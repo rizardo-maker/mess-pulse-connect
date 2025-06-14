@@ -6,42 +6,41 @@ export async function createAdminUser() {
   const adminPassword = 'messoffice';
   
   try {
-    // Check if admin user already exists by trying to sign in without actually logging in
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: adminEmail,
-      password: adminPassword,
-    });
-
-    if (error) {
-      console.log("Admin user doesn't exist yet. Creating...");
-      
-      // Create admin user
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: adminEmail,
-        password: adminPassword,
-      });
-      
-      if (signUpError) {
-        console.error("Error creating admin user:", signUpError);
-        return { success: false, error: signUpError };
-      }
-      
-      console.log("Admin user created successfully:", signUpData);
-      
-      // Make sure we immediately sign out to avoid automatic login
-      await supabase.auth.signOut();
-      
-      return { success: true, data: signUpData };
-    } else {
+    // Optimized admin check with minimal API calls
+    const { data: existingUsers } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(1);
+    
+    if (existingUsers && existingUsers.length > 0) {
       console.log("Admin user already exists");
-      
-      // Sign out after checking to avoid automatic login
-      if (data) {
-        await supabase.auth.signOut();
-      }
-      
       return { success: true, message: "Admin user already exists" };
     }
+    
+    // Create admin user with optimized flow
+    const { data, error } = await supabase.auth.signUp({
+      email: adminEmail,
+      password: adminPassword,
+      options: {
+        emailRedirectTo: `${window.location.origin}/admin`,
+        data: {
+          role: 'admin'
+        }
+      }
+    });
+    
+    if (error) {
+      console.log("Admin user creation error:", error);
+      return { success: false, error };
+    }
+    
+    console.log("Admin user created successfully:", data);
+    
+    // Ensure immediate sign out to prevent auto-login
+    await supabase.auth.signOut();
+    
+    return { success: true, data };
   } catch (error) {
     console.error("Unexpected error creating admin user:", error);
     return { success: false, error };

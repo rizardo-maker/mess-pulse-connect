@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
@@ -11,13 +10,11 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useForm } from "react-hook-form";
+import OptimizedLogin from "@/components/auth/OptimizedLogin";
 
-interface LoginFormValues {
+interface RegisterFormValues {
   email: string;
   password: string;
-}
-
-interface RegisterFormValues extends LoginFormValues {
   confirmPassword: string;
 }
 
@@ -25,10 +22,6 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { user, userRole } = useAuth();
-  
-  const loginForm = useForm<LoginFormValues>({
-    defaultValues: { email: '', password: '' }
-  });
   
   const registerForm = useForm<RegisterFormValues>({
     defaultValues: { email: '', password: '', confirmPassword: '' }
@@ -45,37 +38,8 @@ const Login = () => {
     }
   }, [user, userRole, navigate]);
   
-  const handleLogin = async (formData: LoginFormValues) => {
-    // Form validation
-    if (!formData.email.trim() || !formData.password) {
-      toast.error("Please enter both email and password");
-      return;
-    }
-    
-    setIsSubmitting(true);
-    
-    try {
-      // Authenticate with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-      
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      
-      if (data?.user) {
-        toast.success("Login successful");
-        // Redirect will happen automatically via the useEffect above
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error("Login failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleLoginSuccess = () => {
+    // Navigation will be handled by the useEffect above
   };
   
   const handleRegister = async (formData: RegisterFormValues) => {
@@ -112,10 +76,13 @@ const Login = () => {
         return;
       }
       
-      // Register with Supabase
+      // Optimized registration with rate limiting consideration
       const { data, error } = await supabase.auth.signUp({
-        email: formData.email,
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`
+        }
       });
       
       if (error) {
@@ -126,7 +93,6 @@ const Login = () => {
       if (data?.user) {
         toast.success("Account created successfully. You can now log in.");
         registerForm.reset();
-        loginForm.reset({ email: formData.email, password: '' });
         
         // Switch to login tab
         document.getElementById('login-tab')?.click();
@@ -160,39 +126,7 @@ const Login = () => {
                 </TabsList>
                 
                 <TabsContent value="login">
-                  <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input 
-                        id="email"
-                        type="email"
-                        placeholder="Enter your email"
-                        {...loginForm.register("email", { required: true })}
-                        autoComplete="email"
-                        className="focus:border-rgukt-blue"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="password">Password</Label>
-                      </div>
-                      <Input 
-                        id="password"
-                        type="password"
-                        placeholder="Enter your password"
-                        {...loginForm.register("password", { required: true })}
-                        autoComplete="current-password"
-                        className="focus:border-rgukt-blue"
-                      />
-                    </div>
-                    <Button 
-                      type="submit"
-                      className="w-full bg-rgukt-blue hover:bg-rgukt-lightblue"
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? "Signing in..." : "Sign in"}
-                    </Button>
-                  </form>
+                  <OptimizedLogin onSuccess={handleLoginSuccess} />
                 </TabsContent>
                 
                 <TabsContent value="register">

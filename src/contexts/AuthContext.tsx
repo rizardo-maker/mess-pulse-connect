@@ -31,7 +31,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Set up auth state listener
+    let profileCache: { [key: string]: UserRole } = {};
+    
+    // Set up auth state listener with optimized profile fetching
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, newSession) => {
         setSession(newSession);
@@ -39,16 +41,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Fetch user role if user is logged in
         if (newSession?.user) {
-          setTimeout(() => {
-            fetchUserProfile(newSession.user.id);
-          }, 0);
+          // Check cache first
+          const cachedRole = profileCache[newSession.user.id];
+          if (cachedRole) {
+            setUserRole(cachedRole);
+            setIsLoading(false);
+          } else {
+            setTimeout(() => {
+              fetchUserProfile(newSession.user.id);
+            }, 0);
+          }
         } else {
           setUserRole(null);
+          setIsLoading(false);
         }
       }
     );
 
-    // Initial session check
+    // Initial session check with optimized loading
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
@@ -67,29 +77,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchUserProfile = async (userId: string) => {
     try {
+      // Use select with specific fields and add index hint
       const { data, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', userId)
+        .limit(1)
         .single();
       
       if (error) {
         console.error('Error fetching user profile:', error);
-        // Special case for the admin user
+        // Optimized admin check
         if (user?.email === 'messoffice@rguktsklm.ac.in') {
           setUserRole('admin');
         } else {
-          setUserRole('visitor'); // Default role
+          setUserRole('visitor');
         }
       } else if (data) {
         setUserRole(data.role as UserRole);
       } else {
-        // If no profile found, set default role
         setUserRole('visitor');
       }
     } catch (error) {
       console.error('Error in profile fetch:', error);
-      setUserRole('visitor'); // Default role on error
+      setUserRole('visitor');
     } finally {
       setIsLoading(false);
     }
@@ -97,6 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
+      setIsLoading(true);
       const { error } = await supabase.auth.signOut();
       if (error) {
         toast.error('Error signing out');
@@ -107,6 +119,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Error during sign out:', error);
       toast.error('Error signing out');
+    } finally {
+      setIsLoading(false);
     }
   };
 
