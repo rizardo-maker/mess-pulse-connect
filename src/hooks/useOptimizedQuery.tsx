@@ -1,4 +1,3 @@
-
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -22,16 +21,17 @@ export const useOptimizedQuery = ({
   return useQuery({
     queryKey: [table, select, filters, orderBy, pagination],
     queryFn: async () => {
-      let query = supabase
+      // Use any to avoid complex TypeScript issues with Supabase query builder
+      let query = (supabase as any)
         .from(table)
         .select(select, { count: 'exact' });
 
       // Apply filters efficiently
-      Object.entries(filters).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(filters)) {
         if (value !== undefined && value !== null) {
           query = query.eq(key, value);
         }
-      });
+      }
 
       // Apply ordering
       if (orderBy) {

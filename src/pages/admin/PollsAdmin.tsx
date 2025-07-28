@@ -394,8 +394,8 @@ const PollsAdmin = () => {
                           // Get students who voted for this option
                           const studentsWhoVoted = pollResponses.responses
                             .filter(response => {
-                              if (typeof response.selected_option === 'string') {
-                                return response.selected_option === option;
+                              if (typeof (response as any).selected_option === 'string') {
+                                return (response as any).selected_option === option;
                               }
                               if (Array.isArray(response.selected_options)) {
                                 return response.selected_options.includes(option);
